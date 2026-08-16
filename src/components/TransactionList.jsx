@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useERP } from '../hooks/useERP.js';
 import DeleteConfirmModal from './DeleteConfirmModal.jsx';
 
-const TransactionList = ({ transactions, onDelete, pagination, onPageChange, isLoading }) => {
+const TransactionList = ({ transactions, onDelete, onEdit, pagination, onPageChange, isLoading }) => {
   const { accounts, parties, currentUser } = useERP();
   const [deletingTxn, setDeletingTxn] = useState(null);
 
@@ -19,6 +19,7 @@ const TransactionList = ({ transactions, onDelete, pagination, onPageChange, isL
   };
 
   const canDelete = currentUser.role === 'ADMIN' || currentUser.role === 'CHECKER';
+  const canEdit = currentUser.role === 'ADMIN';
 
   if (!isLoading && transactions.length === 0) {
     return <div className="glass-panel text-center"><p>No transactions found.</p></div>;
@@ -88,6 +89,11 @@ const TransactionList = ({ transactions, onDelete, pagination, onPageChange, isL
                       ₹{amount.toLocaleString()}
                     </td>
                     <td>
+                      {canEdit && onEdit && !txn.isDeleted && (
+                        <button className="action-btn" onClick={() => onEdit(txn)} style={{ marginRight: '0.4rem' }}>
+                          Edit
+                        </button>
+                      )}
                       {canDelete && !txn.isDeleted && (
                         <button className="action-btn delete" onClick={() => handleDeleteClick(txn)}>
                           Delete

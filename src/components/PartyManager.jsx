@@ -3,7 +3,7 @@ import { useERP } from '../hooks/useERP.js';
 import { computePartyBalance } from '../utils/calculations.js';
 
 const PartyManager = ({ onViewLedger }) => {
-  const { parties, transactions, addParty, editParty, deleteParty } = useERP();
+  const { parties, transactions, loans = [], addParty, editParty, deleteParty } = useERP();
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -120,6 +120,8 @@ const PartyManager = ({ onViewLedger }) => {
           {parties.map(party => {
             const balance = computePartyBalance(transactions, party.id);
             const isCustomer = party.type === 'CUSTOMER';
+            const partyLoans = loans.filter(l => l.partyId === party.id || l.partyName?.toLowerCase() === party.name?.toLowerCase());
+            const totalLoanOutstanding = partyLoans.reduce((sum, l) => sum + (l.totalOutstanding || 0), 0);
 
             return (
               <div key={party.id} className="party-card glass-panel">
@@ -128,6 +130,11 @@ const PartyManager = ({ onViewLedger }) => {
                     <span className={`party-type-badge ${isCustomer ? 'customer' : 'vendor'}`}>
                       {isCustomer ? 'Customer' : 'Vendor'}
                     </span>
+                    {partyLoans.length > 0 && (
+                      <span className="party-type-badge vendor" style={{ marginLeft: '0.4rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
+                        🏦 {partyLoans.length} Loan{partyLoans.length > 1 ? 's' : ''}
+                      </span>
+                    )}
                     <h4 className="party-name">{party.name}</h4>
                   </div>
                   <div className="party-balance">
@@ -139,6 +146,13 @@ const PartyManager = ({ onViewLedger }) => {
                     </span>
                   </div>
                 </div>
+
+                {partyLoans.length > 0 && (
+                  <div className="party-loan-strip glass-panel" style={{ padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <span className="text-secondary">Loan Outstanding:</span>
+                    <strong className="text-amber">₹{totalLoanOutstanding.toLocaleString()}</strong>
+                  </div>
+                )}
 
                 {(party.phone || party.email) && (
                   <div className="party-contact">

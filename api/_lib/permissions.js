@@ -12,6 +12,7 @@ export const DEFAULT_PERMISSIONS = {
       approvals: true,
       ledger: true,
       parties: true,
+      loans: true,
       users: true,
     },
     actions: {
@@ -30,6 +31,7 @@ export const DEFAULT_PERMISSIONS = {
       approvals: true,
       ledger: true,
       parties: true,
+      loans: true,
       users: false,
     },
     actions: {
@@ -48,6 +50,7 @@ export const DEFAULT_PERMISSIONS = {
       approvals: false,
       ledger: true,
       parties: true,
+      loans: true,
       users: false,
     },
     actions: {
@@ -66,6 +69,7 @@ export const DEFAULT_PERMISSIONS = {
       approvals: false,
       ledger: true,
       parties: false,
+      loans: true,
       users: false,
     },
     actions: {

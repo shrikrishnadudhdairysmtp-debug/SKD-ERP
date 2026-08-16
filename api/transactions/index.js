@@ -2,6 +2,8 @@ import dbConnect from '../_lib/db.js';
 import Transaction from '../_models/Transaction.js';
 import AuditTrail from '../_models/AuditTrail.js';
 import { verifyAuth, requireRole } from '../_lib/auth.js';
+import { sendNotification } from '../_lib/emailService.js';
+import Party from '../_models/Party.js';
 
 export default async function handler(req, res) {
   try {
@@ -87,6 +89,35 @@ export default async function handler(req, res) {
         role: user.role,
         details: { txnId: txn._id, status, remarks },
       });
+
+      // Fetch dynamic party name & email and recent transaction history after successful transaction DB save
+      const party = partyId ? await Party.findById(partyId) : null;
+      const recipientEmail = party?.email || 'party@skderp.com';
+      const customerName = party?.name || remarks.split('-')[0] || 'Valued Customer';
+      const notificationType = (category === 'Milk Sales' || category === 'Milk Collection') ? 'MILK_COLLECTION' : 'PAYMENT_RECEIVED';
+
+      const recentTxns = partyId ? await Transaction.find({ partyId }).sort({ date: 1 }).limit(15) : [];
+      const historyList = recentTxns.map(t => {
+        const isDr = t.entries?.some(e => e.debit > 0);
+        return {
+          date: t.date,
+          voucherId: String(t._id).slice(-6),
+          remarks: t.remarks || t.category || 'Transaction',
+          debit: isDr ? t.amount || 0 : 0,
+          credit: !isDr ? t.amount || 0 : 0,
+        };
+      });
+
+      // Trigger automatic email notification after DB save
+      sendNotification(notificationType, recipientEmail, {
+        customer_name: customerName,
+        txn_id: String(txn._id),
+        payment_amount: totalDebits,
+        category: category || 'General Ledger',
+        remarks,
+        date: new Date(date || Date.now()).toLocaleDateString('en-IN'),
+        history: historyList,
+      }, `TXN-CREATED-${txn._id}`).catch(err => console.error('Notification error:', err));
 
       return res.status(201).json(txn);
     }

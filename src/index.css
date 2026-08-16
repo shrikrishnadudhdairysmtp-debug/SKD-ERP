@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import './styles/pages.css';
 
 :root {
   --bg-dark: #0f172a;
@@ -118,8 +119,11 @@ body {
 
 .main-viewport {
   flex: 1;
-  padding: 2rem;
-  max-width: calc(100vw - 260px);
+  padding: 1.5rem 2rem;
+  width: calc(100vw - 240px);
+  max-width: calc(100vw - 240px);
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .topbar {

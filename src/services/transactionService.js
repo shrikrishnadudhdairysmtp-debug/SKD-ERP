@@ -14,6 +14,9 @@ export const transactionService = {
   create: async (data) => {
     return await api.post('/transactions', data);
   },
+  update: async (id, data) => {
+    return await api.put(`/transactions/${id}`, data);
+  },
   approve: async (id) => {
     return await api.patch(`/transactions/${id}`, { action: 'APPROVE' });
   },

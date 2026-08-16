@@ -1,65 +1,47 @@
-// Load .env BEFORE any other imports (modules evaluate at import time)
 import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
 
-// ── Security Headers ─────────────────────────────────────────
-app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ── CORS — explicit origin whitelist ─────────────────────────
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:4173',
-  process.env.PRODUCTION_URL, // e.g. https://skd-erp.vercel.app
-].filter(Boolean);
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman in dev)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-}));
-
-// ── Rate Limiting ────────────────────────────────────────────
+// Rate Limiting
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
 });
-app.use(globalLimiter);
 
-// Aggressive rate limit on login (brute-force protection)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
+  message: { error: 'Too many login attempts, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
 });
 
-// ── Body Parsing ─────────────────────────────────────────────
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use('/api/', globalLimiter);
 
-// Wrap Vercel-style handler(req, res) so Express doesn't pass `next` as second arg
+// Express wrapper for Serverless handlers (req, res)
 function wrap(handler) {
-  return (req, res) => handler(req, res);
+  return async (req, res, next) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
-// Helper to merge Express route params into req.query (Vercel uses req.query for dynamic segments)
+// Helper to merge Express route params into req.query
 function injectParams(req, _res, next) {
   const q = { ...req.query, ...req.params };
   Object.defineProperty(req, 'query', {
@@ -71,7 +53,7 @@ function injectParams(req, _res, next) {
   next();
 }
 
-// Import Handlers (dynamic to ensure env is loaded first)
+// Import Handlers
 const { default: healthHandler } = await import('./api/health.js');
 const { default: seedHandler } = await import('./api/seed.js');
 const { default: accountsHandler } = await import('./api/accounts/index.js');
@@ -86,6 +68,17 @@ const { default: transactionIdHandler } = await import('./api/transactions/[id].
 const { default: usersHandler } = await import('./api/users/index.js');
 const { default: userIdHandler } = await import('./api/users/[id].js');
 const { default: userPermissionsHandler } = await import('./api/users/permissions.js');
+const { default: loansHandler } = await import('./api/loans/index.js');
+const { default: loanIdHandler } = await import('./api/loans/[id].js');
+const { default: loanPayHandler } = await import('./api/loans/[id]/pay.js');
+
+const { default: emailSettingsHandler } = await import('./api/email/settings.js');
+const { default: emailTemplatesHandler } = await import('./api/email/templates.js');
+const { default: emailTestHandler } = await import('./api/email/test.js');
+const { default: emailLogsHandler } = await import('./api/email/logs.js');
+const { default: emailResendHandler } = await import('./api/email/resend.js');
+const { default: emailReportHandler } = await import('./api/email/report.js');
+const { processEmailQueue } = await import('./api/_lib/emailService.js');
 
 // Setup Routes
 app.all('/api/health', wrap(healthHandler));
@@ -93,7 +86,6 @@ app.all('/api/seed', wrap(seedHandler));
 
 app.all('/api/accounts', wrap(accountsHandler));
 
-// Login gets its own aggressive rate limiter
 app.all('/api/auth/login', loginLimiter, wrap(authLoginHandler));
 app.all('/api/auth/me', wrap(authMeHandler));
 
@@ -109,6 +101,22 @@ app.all('/api/transactions/:id', injectParams, wrap(transactionIdHandler));
 app.all('/api/users', wrap(usersHandler));
 app.all('/api/users/:id/permissions', injectParams, wrap(userPermissionsHandler));
 app.all('/api/users/:id', injectParams, wrap(userIdHandler));
+
+app.all('/api/loans', wrap(loansHandler));
+app.all('/api/loans/:id/pay', injectParams, wrap(loanPayHandler));
+app.all('/api/loans/:id', injectParams, wrap(loanIdHandler));
+
+app.all('/api/email/settings', wrap(emailSettingsHandler));
+app.all('/api/email/templates', wrap(emailTemplatesHandler));
+app.all('/api/email/test', wrap(emailTestHandler));
+app.all('/api/email/logs', wrap(emailLogsHandler));
+app.all('/api/email/resend', wrap(emailResendHandler));
+app.all('/api/email/report', wrap(emailReportHandler));
+
+// Start Background Email Queue Worker (runs every 5 seconds)
+setInterval(() => {
+  processEmailQueue().catch(err => console.error('Background email queue error:', err));
+}, 5000);
 
 // 404 Fallback
 app.use((_req, res) => {

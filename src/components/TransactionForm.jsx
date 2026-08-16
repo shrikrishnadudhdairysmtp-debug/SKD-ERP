@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useERP } from '../hooks/useERP.js';
 import { useToast } from '../context/ToastContext.jsx';
 
-const TransactionForm = () => {
-  const { accounts, parties, categories, addTransaction, addCategory, currentUser, isLoading } = useERP();
+const TransactionForm = ({ editingTxn, onCancelEdit }) => {
+  const { accounts, parties, categories, addTransaction, editTransaction, addCategory, currentUser, isLoading } = useERP();
   const { showWarning } = useToast();
 
   // Form state
@@ -19,6 +19,39 @@ const TransactionForm = () => {
   // New category inline
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showNewCat, setShowNewCat] = useState(false);
+
+  // Populate state when editingTxn changes
+  useEffect(() => {
+    if (editingTxn) {
+      const dr = editingTxn.entries?.find(e => e.debit > 0);
+      const cr = editingTxn.entries?.find(e => e.credit > 0);
+      const amt = dr?.debit || cr?.credit || 0;
+      setAmount(amt.toString());
+      setDate(editingTxn.date ? new Date(editingTxn.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+      setRemarks(editingTxn.remarks || '');
+      setCategory(editingTxn.category || '');
+      setPartyId(editingTxn.partyId || '');
+      setDebitAccountId(dr?.accountId || '');
+      setCreditAccountId(cr?.accountId || '');
+
+      if (dr?.accountId === 'acc_bank' || dr?.accountId === 'acc_cash') {
+        setTxnType('RECEIPT');
+      } else if (cr?.accountId === 'acc_bank' || cr?.accountId === 'acc_cash') {
+        setTxnType('PAYMENT');
+      } else {
+        setTxnType('JOURNAL');
+      }
+    } else {
+      setAmount('');
+      setDate(new Date().toISOString().split('T')[0]);
+      setRemarks('');
+      setCategory('');
+      setPartyId('');
+      setTxnType('PAYMENT');
+      setDebitAccountId('acc_expense');
+      setCreditAccountId('acc_bank');
+    }
+  }, [editingTxn]);
 
   // Filter accounts by group for the dropdowns
   const assetAccounts = accounts.filter(a => a.type === 'ASSET');
@@ -105,7 +138,12 @@ const TransactionForm = () => {
       category: category || (txnType === 'RECEIPT' ? 'Salary' : 'Expense'),
     };
 
-    await addTransaction(txn);
+    if (editingTxn) {
+      await editTransaction(editingTxn.id, txn);
+      if (onCancelEdit) onCancelEdit();
+    } else {
+      await addTransaction(txn);
+    }
 
     // Reset form
     setAmount('');
@@ -128,7 +166,7 @@ const TransactionForm = () => {
 
   return (
     <form className="transaction-form glass-panel" onSubmit={handleSubmit}>
-      <h3>Add Transaction</h3>
+      <h3>{editingTxn ? 'Edit Transaction' : 'Add Transaction'}</h3>
 
       {/* Transaction Type */}
       <div className="form-group">
@@ -301,8 +339,14 @@ const TransactionForm = () => {
       )}
 
       <button type="submit" className="primary-btn" disabled={isLoading}>
-        {isLoading ? 'Submitting...' : (currentUser.role === 'MAKER' ? 'Submit for Approval' : 'Add Transaction')}
+        {isLoading ? 'Saving...' : editingTxn ? 'Update Transaction' : (currentUser.role === 'MAKER' ? 'Submit for Approval' : 'Add Transaction')}
       </button>
+
+      {editingTxn && onCancelEdit && (
+        <button type="button" className="action-btn" onClick={onCancelEdit} style={{ marginTop: '0.5rem', width: '100%' }}>
+          Cancel Edit
+        </button>
+      )}
     </form>
   );
 };

@@ -2,7 +2,7 @@ import React from 'react';
 import { useERP } from '../hooks/useERP.js';
 
 const DashboardOverview = () => {
-  const { summary } = useERP();
+  const { summary, loansSummary } = useERP();
 
   const cards = [
     { label: 'Income', value: summary.totalIncome, className: 'positive', icon: '↓' },
@@ -10,6 +10,9 @@ const DashboardOverview = () => {
     { label: 'Profit / Loss', value: summary.netProfit, className: summary.netProfit >= 0 ? 'positive' : 'negative', icon: '≡' },
     { label: 'Receivables (AR)', value: summary.totalAR, className: 'ar', icon: '📥' },
     { label: 'Payables (AP)', value: summary.totalAP, className: 'ap', icon: '📤' },
+    { label: 'Active Loans', value: loansSummary.totalActiveLoans || 0, className: 'ar', icon: '🏦', isRawNumber: true },
+    { label: 'Loan Outstanding', value: loansSummary.totalOutstanding || 0, className: 'negative', icon: '⏳' },
+    { label: 'Loan Interest Due', value: loansSummary.totalOutstandingInterest || 0, className: 'ap', icon: '💡' },
   ];
 
   return (
@@ -21,7 +24,7 @@ const DashboardOverview = () => {
             <span className="card-icon">{card.icon}</span>
           </div>
           <p className={`amount ${card.className}`}>
-            ₹{Math.abs(card.value).toLocaleString()}
+            {card.isRawNumber ? card.value : `₹${Math.abs(card.value).toLocaleString()}`}
           </p>
         </div>
       ))}

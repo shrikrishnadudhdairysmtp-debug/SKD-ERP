@@ -66,6 +66,51 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid action' });
     }
 
+    if (req.method === 'PUT') {
+      requireRole(user, 'ADMIN');
+
+      const { entries, date, remarks, partyId, category } = req.body;
+
+      if (!entries || entries.length < 2 || !date || !remarks) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // ── Double-entry validation: debits must equal credits ───
+      const totalDebits = entries.reduce((sum, e) => sum + (parseFloat(e.debit) || 0), 0);
+      const totalCredits = entries.reduce((sum, e) => sum + (parseFloat(e.credit) || 0), 0);
+
+      if (Math.abs(totalDebits - totalCredits) > 0.001) {
+        return res.status(400).json({ 
+          error: `Double-entry violation: total debits (${totalDebits}) must equal total credits (${totalCredits})` 
+        });
+      }
+
+      if (totalDebits <= 0) {
+        return res.status(400).json({ error: 'Transaction amount must be greater than zero' });
+      }
+
+      const txn = await Transaction.findById(id);
+      if (!txn) return res.status(404).json({ error: 'Transaction not found' });
+      if (txn.isDeleted) return res.status(400).json({ error: 'Cannot edit a deleted transaction' });
+
+      txn.entries = entries;
+      txn.date = new Date(date);
+      txn.remarks = remarks;
+      txn.partyId = partyId || null;
+      txn.category = category || null;
+
+      await txn.save();
+
+      await AuditTrail.create({
+        action: 'TRANSACTION_EDITED',
+        user: user.name,
+        role: user.role,
+        details: { txnId: txn._id, remarks },
+      });
+
+      return res.status(200).json(txn);
+    }
+
     if (req.method === 'DELETE') {
       requireRole(user, 'ADMIN', 'CHECKER', 'MAKER');
       const { reason } = req.body;

@@ -39,15 +39,14 @@ const transactionSchema = new mongoose.Schema(
 );
 
 // Pre-save validation: debits must equal credits
-transactionSchema.pre('save', function (next) {
+transactionSchema.pre('save', function () {
   if (this.isModified('entries')) {
     const totalDebits = this.entries.reduce((sum, e) => sum + (e.debit || 0), 0);
     const totalCredits = this.entries.reduce((sum, e) => sum + (e.credit || 0), 0);
     if (Math.abs(totalDebits - totalCredits) > 0.001) {
-      return next(new Error(`Double-entry violation: debits (${totalDebits}) ≠ credits (${totalCredits})`));
+      throw new Error(`Double-entry violation: debits (${totalDebits}) ≠ credits (${totalCredits})`);
     }
   }
-  next();
 });
 
 // Composite index for the most common query pattern

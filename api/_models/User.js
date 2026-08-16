@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema(
         approvals:    { type: Boolean, default: false },
         ledger:       { type: Boolean, default: true },
         parties:      { type: Boolean, default: false },
+        loans:        { type: Boolean, default: true },
         users:        { type: Boolean, default: false },
       },
       actions: {

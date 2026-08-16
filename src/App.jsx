@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useERP } from './hooks/useERP.js'
 import { useToast } from './context/ToastContext.jsx'
 import { ROLE_LABELS } from './constants/defaults.js'
-import { generatePnLReport, generateBalanceSheetReport, generatePartyLedgerReport, generateCategoryReport } from './reports/generateAuditReport.js'
+import { generatePnLReport, generateBalanceSheetReport, generatePartyLedgerReport, generateCategoryReport, generateLoanReport, generateSingleLoanReport, generateReportPdfBase64 } from './reports/generateAuditReport.js'
 import Sidebar from './components/Sidebar.jsx'
 import DashboardOverview from './components/DashboardOverview.jsx'
 import Analytics from './components/Analytics.jsx'
@@ -18,12 +18,18 @@ import Outstanding from './components/Outstanding.jsx'
 import BankReconciliation from './components/BankReconciliation.jsx'
 import AuditLog from './components/AuditLog.jsx'
 import MilkSales from './components/MilkSales.jsx'
+import LoanManager from './components/LoanManager.jsx'
+import EmailSettings from './components/EmailSettings.jsx'
+import EmailLogs from './components/EmailLogs.jsx'
+import { emailService } from './services/emailService.js'
 
 
 function App() {
   const {
     filteredTransactions,
     transactions,
+    loans,
+    loansSummary,
     accounts,
     parties,
     categories,
@@ -50,13 +56,73 @@ function App() {
 
   // Transaction page local filters
   const [filterMonth, setFilterMonth] = useState('ALL');
+  const [editingTxn, setEditingTxn] = useState(null);
 
   // Report modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reportType, setReportType] = useState('PNL');
   const [reportPartyId, setReportPartyId] = useState('');
+  const [reportLoanId, setReportLoanId] = useState('');
   const [reportFromDate, setReportFromDate] = useState('');
   const [reportToDate, setReportToDate] = useState('');
+  const [reportEmailAddress, setReportEmailAddress] = useState('');
+  const [isSendingReportEmail, setIsSendingReportEmail] = useState(false);
+
+  const handleEmailReport = async () => {
+    if (!reportEmailAddress || !reportEmailAddress.includes('@')) {
+      toastFns.showWarning('Please enter a valid recipient email address to send the report.');
+      return;
+    }
+
+    let periodStr = '';
+    if (reportFromDate && reportToDate) {
+      periodStr = `${new Date(reportFromDate).toLocaleDateString()} to ${new Date(reportToDate).toLocaleDateString()}`;
+    } else if (reportFromDate) {
+      periodStr = `From ${new Date(reportFromDate).toLocaleDateString()}`;
+    } else if (reportToDate) {
+      periodStr = `Up to ${new Date(reportToDate).toLocaleDateString()}`;
+    } else {
+      periodStr = fiscalYear === 'ALL' ? 'All Time' : `FY ${fiscalYear}`;
+    }
+
+    let reportTxns = filteredTransactions;
+    if (reportFromDate) reportTxns = reportTxns.filter(t => t.date >= reportFromDate);
+    if (reportToDate) reportTxns = reportTxns.filter(t => t.date <= reportToDate);
+
+    const selectedParty = parties.find(p => p.id === reportPartyId);
+    const selectedLoan = loans.find(l => (l.id || l.loanId) === reportLoanId || l.loanId === reportLoanId);
+
+    setIsSendingReportEmail(true);
+    try {
+      const reportTitle = tabTitles[reportType] || 'Report Statement';
+
+      // Generate PDF Data URI / Base64 for Email Attachment
+      const pdfBase64 = generateReportPdfBase64(reportType, {
+        transactions: reportTxns,
+        accounts,
+        party: selectedParty,
+        period: periodStr,
+        loans,
+        loansSummary,
+        loan: selectedLoan,
+      });
+
+      const attachments = pdfBase64 ? [{
+        filename: `${reportType}_${new Date().toISOString().slice(0, 10)}.pdf`,
+        content: pdfBase64,
+        contentType: 'application/pdf',
+      }] : [];
+
+      await emailService.sendReportEmail(reportEmailAddress, reportTitle, periodStr, attachments);
+      toastFns.showSuccess(`📧 ${reportTitle} (with PDF Attachment) emailed to ${reportEmailAddress}`);
+      setIsModalOpen(false);
+      setReportEmailAddress('');
+    } catch (err) {
+      toastFns.showError(err.message || 'Failed to email report');
+    } finally {
+      setIsSendingReportEmail(false);
+    }
+  };
 
   // ── Filtered transactions for the transaction tab ───────────
   const tabFilteredTxns = filteredTransactions.filter(txn => {
@@ -105,6 +171,15 @@ function App() {
       generatePartyLedgerReport(reportTxns, party, accounts, period);
     } else if (reportType === 'CATEGORY_WISE') {
       generateCategoryReport(reportTxns, period);
+    } else if (reportType === 'LOAN_REPORT') {
+      generateLoanReport(loans, loansSummary, period);
+    } else if (reportType === 'SINGLE_LOAN_REPORT') {
+      if (!reportLoanId) {
+        toastFns.showWarning('Please select a Loan ID for the statement report.');
+        return;
+      }
+      const selectedL = loans.find(l => (l.id || l.loanId) === reportLoanId || l.loanId === reportLoanId);
+      generateSingleLoanReport(selectedL);
     }
     setIsModalOpen(false);
     toastFns.showSuccess('Report downloaded successfully');
@@ -118,12 +193,15 @@ function App() {
     APPROVALS: 'Approval Queue',
     LEDGER: 'General Ledger',
     PARTIES: 'Special Person Accounts',
+    LOANS: 'Loan Management',
     MILK_SALES: 'Milk Sales & Payout Registry',
     CASH_FLOW: 'Cash Flow Analysis',
     OUTSTANDING: 'Outstanding Tracking (AR/AP)',
     BANK_RECONCILE: 'Bank Reconciliation',
     AUDIT_LOG: 'System Audit Logs',
     USERS: 'User Management',
+    EMAIL_SETTINGS: 'Settings → Email Configuration',
+    EMAIL_LOGS: 'Reports → Email History Logs',
   };
 
   // ── Auth guard: show login page if not authenticated ─────
@@ -180,6 +258,10 @@ function App() {
                 <TransactionList
                   transactions={filteredTransactions.slice(0, 5)}
                   onDelete={deleteTransaction}
+                  onEdit={(txn) => {
+                    setEditingTxn(txn);
+                    setActiveTab('TRANSACTIONS');
+                  }}
                 />
               </div>
             </div>
@@ -193,12 +275,15 @@ function App() {
 
           {activeTab === 'TRANSACTIONS' && (
             <div className="fade-in transaction-layout">
-              {currentUser?.permissions?.actions?.createTransactions && (
+              {(currentUser?.permissions?.actions?.createTransactions || editingTxn) && (
                 <aside className="transaction-form-sidebar">
-                  <TransactionForm />
+                  <TransactionForm
+                    editingTxn={editingTxn}
+                    onCancelEdit={() => setEditingTxn(null)}
+                  />
                 </aside>
               )}
-              <section className={`transaction-list-section ${!currentUser?.permissions?.actions?.createTransactions ? 'full-width' : ''}`}>
+              <section className={`transaction-list-section ${!(currentUser?.permissions?.actions?.createTransactions || editingTxn) ? 'full-width' : ''}`}>
                 <div className="filters glass-panel">
                   <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                     <option value="ALL">All Months</option>
@@ -208,6 +293,10 @@ function App() {
                 <TransactionList
                   transactions={tabFilteredTxns}
                   onDelete={deleteTransaction}
+                  onEdit={(txn) => {
+                    setEditingTxn(txn);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   pagination={txnPagination}
                   onPageChange={loadTransactionPage}
                   isLoading={isLoading}
@@ -235,6 +324,12 @@ function App() {
                   setActiveTab('LEDGER');
                 }}
               />
+            </div>
+          )}
+
+          {activeTab === 'LOANS' && (
+            <div className="fade-in">
+              <LoanManager />
             </div>
           )}
 
@@ -273,6 +368,18 @@ function App() {
               <UserManager />
             </div>
           )}
+
+          {activeTab === 'EMAIL_SETTINGS' && (
+            <div className="fade-in">
+              <EmailSettings />
+            </div>
+          )}
+
+          {activeTab === 'EMAIL_LOGS' && (
+            <div className="fade-in">
+              <EmailLogs />
+            </div>
+          )}
         </div>
       </main>
 
@@ -289,6 +396,8 @@ function App() {
                 <option value="BALANCE_SHEET">Balance Sheet</option>
                 <option value="PARTY_LEDGER">Party Ledger Statement</option>
                 <option value="CATEGORY_WISE">Category-wise Report</option>
+                <option value="LOAN_REPORT">Full Loan Portfolio Report</option>
+                <option value="SINGLE_LOAN_REPORT">Single Loan ID Statement & Schedule</option>
               </select>
             </div>
 
@@ -299,6 +408,20 @@ function App() {
                   <option value="">— Select Party —</option>
                   {parties.map(p => (
                     <option key={p.id} value={p.id}>{p.name} ({p.type})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {reportType === 'SINGLE_LOAN_REPORT' && (
+              <div className="form-group">
+                <label>Select Loan Account / ID</label>
+                <select value={reportLoanId} onChange={e => setReportLoanId(e.target.value)}>
+                  <option value="">— Select Loan ID —</option>
+                  {loans.map(l => (
+                    <option key={l.id || l.loanId} value={l.id || l.loanId}>
+                      {l.loanId} — {l.partyName} (₹{l.loanAmount.toLocaleString()})
+                    </option>
                   ))}
                 </select>
               </div>
@@ -325,6 +448,16 @@ function App() {
               </div>
             </div>
 
+            <div className="form-group" style={{ marginTop: '0.75rem' }}>
+              <label>Email Recipient Address (Optional for Email Dispatch)</label>
+              <input
+                type="email"
+                placeholder="e.g. manager@skderp.com or party email"
+                value={reportEmailAddress}
+                onChange={e => setReportEmailAddress(e.target.value)}
+              />
+            </div>
+
             <div className="report-info glass-panel">
               <p className="text-secondary">
                 {reportType === 'PNL' && 'Shows total revenue vs expenses for the selected date range.'}
@@ -342,9 +475,18 @@ function App() {
               </p>
             </div>
 
-            <div className="modal-actions">
+            <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button className="action-btn" onClick={() => { setIsModalOpen(false); setReportFromDate(''); setReportToDate(''); }}>Cancel</button>
-              <button className="primary-btn" onClick={handleDownloadReport}>Download</button>
+              <button
+                type="button"
+                className="action-btn"
+                style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', borderColor: 'rgba(59, 130, 246, 0.3)', fontWeight: '600' }}
+                onClick={handleEmailReport}
+                disabled={isSendingReportEmail}
+              >
+                {isSendingReportEmail ? 'Sending...' : '📧 Email Report'}
+              </button>
+              <button className="primary-btn" onClick={handleDownloadReport}>📄 Download PDF</button>
             </div>
           </div>
         </div>

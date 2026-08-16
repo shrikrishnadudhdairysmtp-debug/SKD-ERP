@@ -5,6 +5,7 @@ import { transactionService } from '../services/transactionService.js';
 import { partyService } from '../services/partyService.js';
 import { userService } from '../services/userService.js';
 import { dataService } from '../services/dataService.js';
+import { loanService } from '../services/loanService.js';
 
 export const ERPContext = createContext(null);
 
@@ -19,6 +20,8 @@ export function ERPProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [auditTrail, setAuditTrail] = useState([]);
+  const [loans, setLoans] = useState([]);
+  const [loansSummary, setLoansSummary] = useState({});
   
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
@@ -71,12 +74,13 @@ export function ERPProvider({ children }) {
 
   const loadAppData = async (user, page = 1) => {
     try {
-      const [accs, cats, ptsRes, txnsRes, dash] = await Promise.all([
+      const [accs, cats, ptsRes, txnsRes, dash, loansRes] = await Promise.all([
         dataService.getAccounts(),
         dataService.getCategories(),
         partyService.getAll({ limit: 200 }),
         transactionService.getAll({ page, limit: 50 }),
         dataService.getDashboard(),
+        loanService.getAll().catch(() => ({ data: [], summary: {} })),
       ]);
 
       setAccounts(accs);
@@ -87,6 +91,9 @@ export function ERPProvider({ children }) {
       setTransactions(txnsRes.data || txnsRes);
       if (txnsRes.pagination) setTxnPagination(txnsRes.pagination);
       
+      setLoans(loansRes.data || []);
+      setLoansSummary(loansRes.summary || {});
+
       setSummary(dash.summary);
       setAccountBalances(dash.accountBalances);
       setAuditTrail(dash.auditTrail);
@@ -149,6 +156,23 @@ export function ERPProvider({ children }) {
       setAccountBalances(dash.accountBalances);
       notify.success('Transaction created successfully');
       return newTxn;
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify]);
+
+  const editTransaction = useCallback(async (id, txnPayload) => {
+    setIsLoading(true);
+    try {
+      const updated = await transactionService.update(id, txnPayload);
+      setTransactions(prev => prev.map(t => t._id === id || t.id === id ? updated : t));
+      const dash = await dataService.getDashboard();
+      setSummary(dash.summary);
+      setAccountBalances(dash.accountBalances);
+      notify.success('Transaction updated successfully');
+      return updated;
     } catch (err) {
       notify.error(err.message);
     } finally {
@@ -304,6 +328,91 @@ export function ERPProvider({ children }) {
     }
   }, [notify]);
 
+  // ── Loan Actions ────────────────────────────────────────────
+  const refreshLoans = useCallback(async () => {
+    try {
+      const res = await loanService.getAll();
+      setLoans(res.data || []);
+      setLoansSummary(res.summary || {});
+    } catch (err) {
+      console.error('Failed to refresh loans', err);
+    }
+  }, []);
+
+  const addLoan = useCallback(async (payload) => {
+    setIsLoading(true);
+    try {
+      const newLoan = await loanService.create(payload);
+      await refreshLoans();
+      const dash = await dataService.getDashboard();
+      setSummary(dash.summary);
+      notify.success(`Loan ${newLoan.loanId} created for ${newLoan.partyName}`);
+      return newLoan;
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify, refreshLoans]);
+
+  const editLoan = useCallback(async (id, payload) => {
+    setIsLoading(true);
+    try {
+      const updated = await loanService.update(id, payload);
+      await refreshLoans();
+      notify.success('Loan parameters updated');
+      return updated;
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify, refreshLoans]);
+
+  const recordLoanPayment = useCallback(async (id, paymentPayload) => {
+    setIsLoading(true);
+    try {
+      const res = await loanService.recordPayment(id, paymentPayload);
+      await refreshLoans();
+      const dash = await dataService.getDashboard();
+      setSummary(dash.summary);
+      notify.success(`Payment of ₹${paymentPayload.amount.toLocaleString()} recorded for Loan ${res.loan.loanId}`);
+      return res;
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify, refreshLoans]);
+
+  const closeLoan = useCallback(async (id) => {
+    setIsLoading(true);
+    try {
+      await loanService.close(id);
+      await refreshLoans();
+      notify.success('Loan closed');
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify, refreshLoans]);
+
+  const resetLoanEntries = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await loanService.resetAllEntries();
+      await refreshLoans();
+      const dash = await dataService.getDashboard();
+      setSummary(dash.summary);
+      notify.success('All loan payment entries have been reset to zero!');
+    } catch (err) {
+      notify.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [notify, refreshLoans]);
+
   // ── Derived State ──────────────────────────────────────────
   
   // Format IDs consistently since MongoDB uses _id but frontend might expect id
@@ -340,6 +449,8 @@ export function ERPProvider({ children }) {
     transactions: normalizedTransactions,
     categories,
     auditTrail,
+    loans,
+    loansSummary,
 
     // Auth & Users
     currentUser,
@@ -377,6 +488,7 @@ export function ERPProvider({ children }) {
 
     // Actions
     addTransaction,
+    editTransaction,
     deleteTransaction,
     approveTransaction,
     rejectTransaction,
@@ -385,6 +497,12 @@ export function ERPProvider({ children }) {
     deleteParty,
     addAccount: () => notify.warning('Adding manual accounts is disabled in this version.'),
     addCategory,
+    addLoan,
+    editLoan,
+    recordLoanPayment,
+    closeLoan,
+    refreshLoans,
+    resetLoanEntries,
   }), [
     normalizedAccounts, normalizedParties, normalizedTransactions, categories, auditTrail,
     currentUser, isAuthenticated, login, logout, normalizedUsers,
@@ -392,8 +510,9 @@ export function ERPProvider({ children }) {
     filteredTransactions, pendingTransactions, fiscalYear, availableYears,
     accountBalances, summary,
     txnPagination, partyPagination, loadTransactionPage, isLoading,
-    addTransaction, deleteTransaction, approveTransaction, rejectTransaction,
-    addParty, editParty, deleteParty, addCategory, notify
+    addTransaction, editTransaction, deleteTransaction, approveTransaction, rejectTransaction,
+    addParty, editParty, deleteParty, addCategory, notify,
+    loans, loansSummary, addLoan, editLoan, recordLoanPayment, closeLoan, refreshLoans, resetLoanEntries
   ]);
 
   if (isInitializing) {

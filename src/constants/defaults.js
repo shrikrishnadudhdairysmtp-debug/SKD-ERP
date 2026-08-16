@@ -67,6 +67,7 @@ export const PERMISSION_LABELS = {
     approvals: 'Pending Approvals',
     ledger: 'General Ledger',
     parties: 'Parties (Customers/Vendors)',
+    loans: 'Loan Management',
     users: 'User Management',
   },
   actions: {

@@ -3,6 +3,7 @@ import Party from '../_models/Party.js';
 import Account from '../_models/Account.js';
 import AuditTrail from '../_models/AuditTrail.js';
 import { verifyAuth, requireRole } from '../_lib/auth.js';
+import { sendNotification } from '../_lib/emailService.js';
 
 export default async function handler(req, res) {
   try {
@@ -83,6 +84,14 @@ export default async function handler(req, res) {
         role: user.role,
         details: { partyId: party._id, name, type },
       });
+
+      // Compulsory Email Notification
+      sendNotification('NEW_MEMBER', email || 'member@skderp.com', {
+        customer_name: name,
+        member_id: String(party._id),
+        phone: phone || 'N/A',
+        email: email || 'N/A',
+      }, `MEMBER-CREATED-${party._id}`).catch(err => console.error('Notification error:', err));
 
       return res.status(201).json(party);
     }

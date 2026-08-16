@@ -83,47 +83,84 @@ const icons = {
       <path d="M6 6h6M6 9h6M6 12h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
     </svg>
   ),
+  LOANS: (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path d="M2 15h14M3 8v5M7 8v5M11 8v5M15 8v5M9 2L2 6.5V8h14V6.5L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M7 5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  ),
 };
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
   const { summary, currentUser } = useERP();
 
   const tabs = [
-    { id: 'OVERVIEW',       label: 'Overview',       show: currentUser?.permissions?.pages?.overview },
-    { id: 'ANALYTICS',      label: 'Analytics',      show: currentUser?.permissions?.pages?.analytics },
-    { id: 'TRANSACTIONS',   label: 'Transactions',   show: currentUser?.permissions?.pages?.transactions },
-    { id: 'APPROVALS',      label: 'Approvals',      badge: summary.pendingCount, show: currentUser?.permissions?.pages?.approvals },
-    { id: 'LEDGER',         label: 'Ledger',         show: currentUser?.permissions?.pages?.ledger },
-    { id: 'PARTIES',        label: 'Parties',        show: currentUser?.permissions?.pages?.parties },
-    { id: 'MILK_SALES',     label: 'Milk Sales',     show: true },
-    { id: 'CASH_FLOW',      label: 'Cash Flow',      show: true },
-    { id: 'OUTSTANDING',    label: 'Outstanding',    show: true },
-    { id: 'BANK_RECONCILE', label: 'Bank Reconcile', show: true },
-    { id: 'AUDIT_LOG',      label: 'Audit Log',      show: currentUser?.role === 'ADMIN' || currentUser?.role === 'CHECKER' },
-    { id: 'USERS',          label: 'Users',          show: currentUser?.role === 'ADMIN' || currentUser?.permissions?.pages?.users },
+    { id: 'OVERVIEW',       label: 'Dashboard',       show: currentUser?.permissions?.pages?.overview },
+    { id: 'PARTIES',        label: 'Members',         show: currentUser?.permissions?.pages?.parties },
+    { id: 'MILK_SALES',     label: 'Milk Collection', show: true },
+    { id: 'TRANSACTIONS',   label: 'Sales & Billing', show: currentUser?.permissions?.pages?.transactions },
+    { id: 'CASH_FLOW',      label: 'Inventory',       show: true },
+    { id: 'LEDGER',         label: 'Finance',         show: currentUser?.permissions?.pages?.ledger },
+    {
+      id: 'LOANS',
+      label: 'Loan Management',
+      show: currentUser?.role === 'ADMIN' || currentUser?.permissions?.pages?.loans !== false,
+      subItems: [
+        { id: 'LOAN_OVERVIEW', label: 'Overview' },
+        { id: 'LOAN_NEW', label: 'New Loan' },
+        { id: 'LOAN_LIST', label: 'Loan List' },
+        { id: 'LOAN_SCHEDULE', label: 'Repayment Schedule' },
+        { id: 'LOAN_PAYMENTS', label: 'Payment Records' },
+        { id: 'LOAN_REPORTS', label: 'Reports' },
+      ]
+    },
+    { id: 'OUTSTANDING',    label: 'Expenses',        show: true },
+    { id: 'APPROVALS',      label: 'Notifications',   badge: summary.pendingCount, show: currentUser?.permissions?.pages?.approvals },
+    { id: 'EMAIL_SETTINGS', label: 'Email Config', show: currentUser?.role === 'ADMIN' },
+    { id: 'EMAIL_LOGS',     label: 'Email History Logs', show: currentUser?.role === 'ADMIN' || currentUser?.role === 'CHECKER' },
+    { id: 'BANK_RECONCILE', label: 'Settings',        show: true },
+    { id: 'USERS',          label: 'User Management', show: currentUser?.role === 'ADMIN' || currentUser?.permissions?.pages?.users },
   ].filter(tab => tab.show !== false);
 
   return (
-    <aside className="sidebar-nav glass-panel">
+    <aside className="sidebar-nav glass-panel" style={{ width: '240px', minWidth: '240px' }}>
       <div className="brand">
         <h2>SKD</h2>
         <p>ERP System</p>
       </div>
       <nav>
-        {tabs.map(tab => (
-          <button 
-            key={tab.id} 
-            className={`nav-btn ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-            aria-label={tab.label}
-          >
-            <span className="icon" aria-hidden="true">{icons[tab.id]}</span>
-            {tab.label}
-            {tab.badge > 0 && (
-              <span className="nav-badge">{tab.badge}</span>
-            )}
-          </button>
-        ))}
+        {tabs.map(tab => {
+          const isActive = activeTab === tab.id || (activeTab === 'LOANS' && tab.id === 'LOANS');
+          return (
+            <React.Fragment key={tab.id}>
+              <button 
+                className={`nav-btn ${isActive ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+                aria-label={tab.label}
+              >
+                <span className="icon" aria-hidden="true">{icons[tab.id] || icons.OVERVIEW}</span>
+                {tab.label}
+                {tab.badge > 0 && (
+                  <span className="nav-badge">{tab.badge}</span>
+                )}
+              </button>
+              {tab.subItems && isActive && (
+                <div className="sub-nav-menu" style={{ paddingLeft: '2.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', margin: '0.25rem 0 0.5rem 0' }}>
+                  {tab.subItems.map(sub => (
+                    <button
+                      key={sub.id}
+                      className="sub-nav-btn"
+                      onClick={() => setActiveTab('LOANS')}
+                      style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', textAlign: 'left', padding: '0.25rem 0.5rem', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      • {sub.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
       </nav>
     </aside>
   );
