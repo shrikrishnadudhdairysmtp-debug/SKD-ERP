@@ -51,7 +51,8 @@ export default async function handler(req, res) {
 
       if (senderName !== undefined) settings.senderName = senderName;
       if (senderEmail !== undefined) settings.senderEmail = senderEmail;
-      if (secureSsl !== undefined) settings.secureSsl = Boolean(secureSsl);
+      if (secureSsl !== undefined) settings.secureSsl = Number(settings.smtpPort) === 465;
+      else settings.secureSsl = Number(settings.smtpPort) === 465;
       if (enabled !== undefined) settings.enabled = Boolean(enabled);
       if (notificationToggles !== undefined) settings.notificationToggles = { ...settings.notificationToggles, ...notificationToggles };
       if (companyName !== undefined) settings.companyName = companyName;

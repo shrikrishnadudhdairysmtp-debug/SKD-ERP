@@ -59,7 +59,8 @@ export async function createTransporter() {
   const senderName = process.env.SENDER_NAME || settings.senderName || 'SKD ERP Financial System';
   const senderEmail = process.env.SENDER_EMAIL || settings.senderEmail || username || 'noreply@skderp.com';
   const isEnabled = process.env.SMTP_ENABLED !== undefined ? process.env.SMTP_ENABLED === 'true' : settings.enabled;
-  const isSecure = process.env.SMTP_SECURE !== undefined ? process.env.SMTP_SECURE === 'true' : (portNum === 465 || settings.secureSsl);
+  // Force secure: true ONLY for Port 465 (Direct SSL/TLS). For Port 587/25/2525, secure MUST be false (STARTTLS) to prevent OpenSSL 'wrong version number' errors.
+  const isSecure = portNum === 465;
 
   if (isEnabled && host && username && password) {
     const currentHash = `${host}:${portNum}:${username}:${password}:${isSecure}`;
