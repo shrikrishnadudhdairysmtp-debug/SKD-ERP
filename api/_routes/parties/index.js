@@ -47,10 +47,29 @@ export default async function handler(req, res) {
       const total = await Party.countDocuments(filter);
       const totalPages = Math.ceil(total / limitNum);
 
-      const parties = await Party.find(filter)
+      const rawParties = await Party.find(filter)
         .sort({ name: 1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum);
+
+      // Auto-assign memberRef for any legacy party missing memberRef
+      const parties = await Promise.all(
+        rawParties.map(async (party) => {
+          if (!party.memberRef) {
+            const ref = await generateVoucherRef('IN', 'MEMBER', party.createdAt || new Date());
+            party.memberRef = ref;
+            party.voucherRef = ref;
+            await party.save();
+          }
+          const pObj = party.toObject ? party.toObject() : { ...party };
+          return {
+            ...pObj,
+            id: String(party._id),
+            memberRef: party.memberRef || party.voucherRef,
+            voucherRef: party.memberRef || party.voucherRef,
+          };
+        })
+      );
 
       return res.status(200).json({
         data: parties,
@@ -113,15 +132,21 @@ export default async function handler(req, res) {
         details: { partyId: party._id, memberRef, name, type },
       });
 
-      // Compulsory Email Notification
+      // Compulsory Email Notification with formatted memberRef
       sendNotification('NEW_MEMBER', email || 'member@skderp.com', {
         customer_name: name,
-        member_id: memberRef || String(party._id),
+        member_id: memberRef,
         phone: phone || 'N/A',
         email: email || 'N/A',
       }, `MEMBER-CREATED-${party._id}`).catch(err => console.error('Notification error:', err));
 
-      return res.status(201).json(party);
+      const partyObj = party.toObject();
+      return res.status(201).json({
+        ...partyObj,
+        id: String(party._id),
+        memberRef,
+        voucherRef: memberRef,
+      });
     }
 
     res.status(405).json({ error: 'Method not allowed' });

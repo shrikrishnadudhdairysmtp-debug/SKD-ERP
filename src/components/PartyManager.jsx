@@ -140,7 +140,10 @@ const PartyManager = ({ onViewLedger }) => {
                         🏦 {partyLoans.length} Loan{partyLoans.length > 1 ? 's' : ''}
                       </span>
                     )}
-                    <h4 className="party-name">{party.name}</h4>
+                    <h4 className="party-name" style={{ marginBottom: '0.2rem' }}>{party.name}</h4>
+                    <div style={{ fontSize: '0.85rem', color: '#60a5fa', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                      Member ID: <code>{party.memberRef || party.voucherRef || 'N/A'}</code>
+                    </div>
                   </div>
                   <div className="party-balance">
                     <span className="party-balance-label">
