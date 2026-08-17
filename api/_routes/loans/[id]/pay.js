@@ -4,7 +4,7 @@ import Transaction from '../../../_models/Transaction.js';
 import AuditTrail from '../../../_models/AuditTrail.js';
 import { verifyAuth, requireRole } from '../../../_lib/auth.js';
 import { sendNotification } from '../../../_lib/emailService.js';
-import { calculateLoanMetrics } from '../../index.js';
+import { calculateLoanMetrics } from '../index.js';
 import Party from '../../../_models/Party.js';
 
 export default async function handler(req, res) {
