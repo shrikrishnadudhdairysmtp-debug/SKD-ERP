@@ -4,7 +4,7 @@ import EmailSetting from '../_models/EmailSetting.js';
 import EmailLog from '../_models/EmailLog.js';
 import { generateTransactionPdf } from './pdfGenerator.js';
 
-// Singleton Transporter Cache for Sub-Millisecond High Performance
+// Singleton Transporter Cache for Performance
 let cachedTransporter = null;
 let cachedSettingsHash = '';
 
@@ -46,54 +46,55 @@ export function replaceVariables(templateStr = '', data = {}) {
 }
 
 /**
- * Get or create high-performance pooled Nodemailer Transporter.
+ * Get or create Nodemailer Transporter.
+ * Prioritizes Environment Variables (SMTP_HOST, SMTP_USER, SMTP_PASS), then falls back to MongoDB settings.
  */
 export async function createTransporter() {
   const settings = await getEmailSettings();
 
-  if (
-    settings.enabled &&
-    settings.smtpHost &&
-    settings.smtpUsername &&
-    settings.smtpPassword
-  ) {
-    const portNum = Number(settings.smtpPort) || 587;
-    const isSecure = portNum === 465;
-    const currentHash = `${settings.smtpHost}:${portNum}:${settings.smtpUsername}:${settings.smtpPassword}:${settings.secureSsl}`;
+  const host = process.env.SMTP_HOST || process.env.EMAIL_HOST || settings.smtpHost;
+  const portNum = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || settings.smtpPort) || 587;
+  const username = process.env.SMTP_USER || process.env.EMAIL_USER || settings.smtpUsername;
+  const password = process.env.SMTP_PASS || process.env.EMAIL_PASS || settings.smtpPassword;
+  const senderName = process.env.SENDER_NAME || settings.senderName || 'SKD ERP Financial System';
+  const senderEmail = process.env.SENDER_EMAIL || settings.senderEmail || username || 'noreply@skderp.com';
+  const isEnabled = process.env.SMTP_ENABLED !== undefined ? process.env.SMTP_ENABLED === 'true' : settings.enabled;
+  const isSecure = process.env.SMTP_SECURE !== undefined ? process.env.SMTP_SECURE === 'true' : (portNum === 465 || settings.secureSsl);
 
-    // Reuse existing pooled connection if configuration hasn't changed
+  if (isEnabled && host && username && password) {
+    const currentHash = `${host}:${portNum}:${username}:${password}:${isSecure}`;
+
     if (cachedTransporter && cachedSettingsHash === currentHash) {
       return {
         transporter: cachedTransporter,
-        senderName: settings.senderName || 'SKD ERP Financial System',
-        senderEmail: settings.senderEmail || settings.smtpUsername,
+        senderName,
+        senderEmail,
         isRealSmtp: true,
       };
     }
 
-    // Initialize new high-performance pooled connection
     cachedTransporter = nodemailer.createTransport({
-      pool: true, // Reuse TCP/TLS connections
-      maxConnections: 5,
-      maxMessages: 100,
-      host: settings.smtpHost,
+      host,
       port: portNum,
-      secure: isSecure,
+      secure: isSecure, // true for 465, false for 587 / STARTTLS
       auth: {
-        user: settings.smtpUsername,
-        pass: settings.smtpPassword,
+        user: username,
+        pass: password,
       },
+      connectionTimeout: 10000, // 10s connection timeout for serverless functions
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
       tls: {
-        rejectUnauthorized: false
-      }
+        rejectUnauthorized: false,
+      },
     });
 
     cachedSettingsHash = currentHash;
 
     return {
       transporter: cachedTransporter,
-      senderName: settings.senderName || 'SKD ERP Financial System',
-      senderEmail: settings.senderEmail || settings.smtpUsername,
+      senderName,
+      senderEmail,
       isRealSmtp: true,
     };
   }
@@ -106,8 +107,8 @@ export async function createTransporter() {
         return { messageId: `simulated-${Date.now()}` };
       }
     },
-    senderName: settings.senderName || 'SKD ERP (Simulated)',
-    senderEmail: settings.senderEmail || 'noreply@skderp.local',
+    senderName,
+    senderEmail,
     isRealSmtp: false,
   };
 }
@@ -154,7 +155,7 @@ function buildPremiumHtmlEmail(subject, bodyContent, companyName, companyContact
 }
 
 /**
- * Centralized Reusable Notification Function (Sub-Millisecond Response)
+ * Centralized Reusable Notification Function (Serverless-Safe Synchronous Dispatch)
  */
 export async function sendNotification(type, recipient, data = {}, eventRefId = null, attachments = []) {
   try {
@@ -180,24 +181,24 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
     };
 
     const toggleKey = toggleKeyMap[type];
-    if (toggleKey && settings.notificationToggles[toggleKey] === false) {
+    if (toggleKey && settings.notificationToggles && settings.notificationToggles[toggleKey] === false) {
       return { status: 'TOGGLE_DISABLED' };
     }
 
     if (!recipient || !recipient.includes('@')) {
-      recipient = settings.senderEmail || 'customer@skderp.com';
+      recipient = process.env.SENDER_EMAIL || settings.senderEmail || 'customer@skderp.com';
     }
 
     // Event Reference ID for Duplicate Protection
     const refId = eventRefId || `${type}-${data.loan_id || data.member_id || data.txn_id || Date.now()}-${new Date().toISOString().slice(0, 10)}`;
 
     const existingLog = await EmailLog.findOne({ eventRefId: refId });
-    if (existingLog) {
+    if (existingLog && existingLog.status === 'SENT') {
       return { status: 'DUPLICATE_PREVENTED', log: existingLog };
     }
 
     // Render template
-    const templateObj = settings.templates[type] || {
+    const templateObj = (settings.templates && settings.templates[type]) || {
       subject: `SKD ERP Notification - ${type}`,
       body: `Dear {{customer_name}},\n\nThis is an automated notification regarding ${type}.\n\nBest regards,\n{{company_name}}`,
     };
@@ -218,47 +219,61 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
       settings.companyContact
     );
 
-    // Auto-generate official PDF receipt attachment with complete calculations for every transaction
+    // Auto-generate official PDF receipt attachment
     let finalAttachments = attachments || [];
     if ((!finalAttachments || finalAttachments.length === 0) && type !== 'TEST_EMAIL') {
-      const autoPdf = generateTransactionPdf(type, dataWithCompany, settings.companyName);
-      if (autoPdf) {
-        const filenameMap = {
-          LOAN_CREATED: `Loan_Sanction_Advice_${data.loan_id || 'LOAN'}.pdf`,
-          LOAN_PAYMENT: `Loan_Payment_Receipt_${data.loan_id || 'PAY'}.pdf`,
-          NEW_MEMBER: `Member_Registration_${data.member_id || 'MEMBER'}.pdf`,
-          MILK_COLLECTION: `Milk_Collection_Slip_${data.txn_id || 'MILK'}.pdf`,
-          PAYMENT_RECEIVED: `Payment_Voucher_${data.txn_id || 'TXN'}.pdf`,
-          LOAN_CLOSED: `Loan_Closure_Certificate_${data.loan_id || 'CLOSED'}.pdf`,
-        };
-        finalAttachments = [{
-          filename: filenameMap[type] || `SKD_ERP_${type}_Receipt.pdf`,
-          content: autoPdf,
-          contentType: 'application/pdf',
-        }];
+      try {
+        const autoPdf = generateTransactionPdf(type, dataWithCompany, settings.companyName);
+        if (autoPdf) {
+          const filenameMap = {
+            LOAN_CREATED: `Loan_Sanction_Advice_${data.loan_id || 'LOAN'}.pdf`,
+            LOAN_PAYMENT: `Loan_Payment_Receipt_${data.loan_id || 'PAY'}.pdf`,
+            NEW_MEMBER: `Member_Registration_${data.member_id || 'MEMBER'}.pdf`,
+            MILK_COLLECTION: `Milk_Collection_Slip_${data.txn_id || 'MILK'}.pdf`,
+            PAYMENT_RECEIVED: `Payment_Voucher_${data.txn_id || 'TXN'}.pdf`,
+            LOAN_CLOSED: `Loan_Closure_Certificate_${data.loan_id || 'CLOSED'}.pdf`,
+          };
+          finalAttachments = [{
+            filename: filenameMap[type] || `SKD_ERP_${type}_Receipt.pdf`,
+            content: autoPdf,
+            contentType: 'application/pdf',
+          }];
+        }
+      } catch (pdfErr) {
+        console.error('PDF generation warning (continuing email dispatch):', pdfErr);
       }
     }
 
-    // Save to Queue (Instant response)
-    const emailLog = await EmailLog.create({
-      eventRefId: refId,
-      recipient,
-      recipientName: dataWithCompany.customer_name,
-      subject: renderedSubject,
-      notificationType: type,
-      bodyHtml: renderedBodyHtml,
-      bodyText: renderedBodyText,
-      status: 'PENDING',
-      metadata: dataWithCompany,
-      attachments: finalAttachments,
-    });
+    // Create or update log entry
+    let emailLog = existingLog;
+    if (!emailLog) {
+      emailLog = await EmailLog.create({
+        eventRefId: refId,
+        recipient,
+        recipientName: dataWithCompany.customer_name,
+        subject: renderedSubject,
+        notificationType: type,
+        bodyHtml: renderedBodyHtml,
+        bodyText: renderedBodyText,
+        status: 'PENDING',
+        metadata: dataWithCompany,
+        attachments: finalAttachments,
+      });
+    }
 
-    // Trigger instant background dispatch without blocking API tick
-    setImmediate(() => {
-      processSingleEmail(emailLog._id).catch(err => console.error('Instant dispatch error:', err));
-    });
+    // Synchronously dispatch email so Vercel Serverless container doesn't freeze mid-transmission
+    try {
+      await processSingleEmail(emailLog._id);
+    } catch (dispatchErr) {
+      console.error('Email dispatch error:', dispatchErr);
+    }
 
-    return { status: 'QUEUED', logId: emailLog._id };
+    const updatedLog = await EmailLog.findById(emailLog._id);
+    return {
+      status: updatedLog ? updatedLog.status : 'QUEUED',
+      logId: emailLog._id,
+      errorMessage: updatedLog ? updatedLog.errorMessage : null,
+    };
   } catch (error) {
     console.error(`Failed to dispatch notification ${type}:`, error);
     return { status: 'ERROR', error: error.message };
@@ -266,13 +281,13 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
 }
 
 /**
- * High-Speed Single Email Dispatcher
+ * Single Email Dispatcher
  */
 export async function processSingleEmail(emailLogId) {
   try {
     await dbConnect();
 
-    // Atomically claim the log so no parallel worker tick processes it concurrently
+    // Atomically claim the log
     const log = await EmailLog.findOneAndUpdate(
       {
         _id: emailLogId,
@@ -284,7 +299,7 @@ export async function processSingleEmail(emailLogId) {
 
     if (!log) return;
 
-    const { transporter, senderName, senderEmail } = await createTransporter();
+    const { transporter, senderName, senderEmail, isRealSmtp } = await createTransporter();
 
     const mailOptions = {
       from: `"${senderName}" <${senderEmail}>`,
@@ -297,22 +312,28 @@ export async function processSingleEmail(emailLogId) {
     if (log.attachments && log.attachments.length > 0) {
       mailOptions.attachments = log.attachments.map(att => {
         let rawContent = att.content || '';
-        if (rawContent.includes('base64,')) {
-          rawContent = rawContent.split('base64,')[1];
+        if (typeof rawContent === 'string') {
+          if (rawContent.includes('base64,')) {
+            rawContent = rawContent.split('base64,')[1];
+          }
+          const cleanBase64 = rawContent.replace(/[^A-Za-z0-9+/=]/g, '');
+          const pdfBuf = Buffer.from(cleanBase64, 'base64');
+          return {
+            filename: att.filename || 'SKD_ERP_Report.pdf',
+            content: pdfBuf,
+            contentType: 'application/pdf',
+          };
         }
-        // Strip any whitespace/URI params that corrupt binary decoding
-        const cleanBase64 = rawContent.replace(/[^A-Za-z0-9+/=]/g, '');
-        const pdfBuf = Buffer.from(cleanBase64, 'base64');
         return {
           filename: att.filename || 'SKD_ERP_Report.pdf',
-          content: pdfBuf,
+          content: rawContent,
           contentType: 'application/pdf',
         };
       });
     }
 
     try {
-      await transporter.sendMail(mailOptions);
+      const sendResult = await transporter.sendMail(mailOptions);
 
       await EmailLog.updateOne(
         { _id: log._id },
@@ -320,11 +341,12 @@ export async function processSingleEmail(emailLogId) {
           $set: {
             status: 'SENT',
             sentAt: new Date(),
-            errorMessage: '',
+            errorMessage: isRealSmtp ? '' : 'SMTP credentials not set; email was simulated locally.',
+            metadata: { ...log.metadata, messageId: sendResult.messageId, isRealSmtp },
           }
         }
       );
-      console.log(`⚡ [INSTANT EMAIL SENT] To: ${log.recipient} | Subject: "${log.subject}"`);
+      console.log(`⚡ [EMAIL DISPATCH SUCCESS] To: ${log.recipient} | Subject: "${log.subject}" | SMTP: ${isRealSmtp ? 'REAL' : 'SIMULATED'}`);
     } catch (err) {
       const newRetry = (log.retryCount || 0) + 1;
       const isFailed = newRetry >= (log.maxRetries || 3);
@@ -346,7 +368,7 @@ export async function processSingleEmail(emailLogId) {
 }
 
 /**
- * Ultra-Fast Parallel Queue Processing Engine (Batch Concurrent Processing)
+ * Queue Processing Engine
  */
 export async function processEmailQueue() {
   try {
@@ -357,7 +379,6 @@ export async function processEmailQueue() {
     }).limit(10);
 
     if (pendingLogs.length > 0) {
-      // Process pending emails concurrently in parallel
       await Promise.allSettled(pendingLogs.map(log => processSingleEmail(log._id)));
     }
   } catch (err) {

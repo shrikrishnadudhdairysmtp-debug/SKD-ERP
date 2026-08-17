@@ -18,8 +18,15 @@ export default async function handler(req, res) {
         date: new Date().toLocaleString('en-IN'),
       }, `TEST-EMAIL-${Date.now()}`);
 
+      if (result.status === 'FAILED') {
+        return res.status(400).json({
+          error: `SMTP Mail Delivery Failed: ${result.errorMessage || 'Invalid SMTP configuration'}`,
+          result,
+        });
+      }
+
       return res.status(200).json({
-        message: `Test email dispatched to ${target}`,
+        message: `Test email dispatched successfully to ${target}`,
         result,
       });
     }
