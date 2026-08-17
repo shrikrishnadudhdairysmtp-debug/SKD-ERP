@@ -1,4 +1,4 @@
-import dbConnect from './_lib/db.js';
+import dbConnect from '../_lib/db.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

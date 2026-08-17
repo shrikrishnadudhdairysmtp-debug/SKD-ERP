@@ -1,4 +1,4 @@
-import { runSeed } from './_lib/seed.js';
+import { runSeed } from '../_lib/seed.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
