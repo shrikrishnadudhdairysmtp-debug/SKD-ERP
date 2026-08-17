@@ -2,10 +2,11 @@ import dbConnect from '../../../_lib/db.js';
 import Loan from '../../../_models/Loan.js';
 import Transaction from '../../../_models/Transaction.js';
 import AuditTrail from '../../../_models/AuditTrail.js';
+import Party from '../../../_models/Party.js';
 import { verifyAuth, requireRole } from '../../../_lib/auth.js';
 import { sendNotification } from '../../../_lib/emailService.js';
 import { calculateLoanMetrics } from '../index.js';
-import Party from '../../../_models/Party.js';
+import { generateVoucherRef } from '../../../_lib/referenceGenerator.js';
 
 export default async function handler(req, res) {
   const { id } = req.query;
@@ -46,11 +47,14 @@ export default async function handler(req, res) {
     const interestPaidThisTime = Math.min(numAmount, outstandingInterest);
     const principalPaidThisTime = Math.max(0, numAmount - interestPaidThisTime);
 
-    // Generate Payment ID
+    // Generate Payment ID & Reference
     const paymentId = `PAY-${Date.now().toString().slice(-6)}`;
+    const paymentRef = await generateVoucherRef('IN', 'PAYMENT', date || new Date());
 
     // Add payment entry
     rawLoan.payments.push({
+      paymentRef,
+      voucherRef: paymentRef,
       paymentId,
       date: new Date(date || Date.now()),
       amount: numAmount,
@@ -84,9 +88,12 @@ export default async function handler(req, res) {
     }
 
     const txn = new Transaction({
+      voucherRef: paymentRef,
+      refType: 'IN',
+      refModule: 'PAYMENT',
       entries,
       date: new Date(date || Date.now()),
-      remarks: `Loan Repayment - ${rawLoan.loanId} (${rawLoan.partyName}). Interest: ₹${interestPaidThisTime}, Principal: ₹${principalPaidThisTime}. ${remarks}`.trim(),
+      remarks: `Loan Repayment (${paymentRef} / ${rawLoan.loanId}) for ${rawLoan.partyName}. Interest: ₹${interestPaidThisTime}, Principal: ₹${principalPaidThisTime}. ${remarks}`.trim(),
       partyId: rawLoan.partyId,
       category: 'Investment',
       status: 'APPROVED',
@@ -101,6 +108,7 @@ export default async function handler(req, res) {
       role: user.role,
       details: {
         loanId: rawLoan.loanId,
+        paymentRef,
         amount: numAmount,
         interestPaid: interestPaidThisTime,
         principalPaid: principalPaidThisTime,
@@ -110,39 +118,33 @@ export default async function handler(req, res) {
 
     const updatedMetrics = calculateLoanMetrics(rawLoan);
 
-    // Fetch dynamic party email after successful loan repayment save
+    // Fetch dynamic party email
     const party = rawLoan.partyId ? await Party.findById(rawLoan.partyId) : null;
     const recipientEmail = party?.email || 'customer@skderp.com';
 
     // Trigger automatic email notification after DB save
     sendNotification('LOAN_PAYMENT', recipientEmail, {
       customer_name: rawLoan.partyName,
-      loan_id: rawLoan.loanId,
-      loan_amount: rawLoan.amount,
-      interest_rate: rawLoan.monthlyInterestRate || 2,
-      monthly_interest: updatedMetrics.monthlyInterest,
-      date: new Date(rawLoan.startDate || rawLoan.createdAt).toLocaleDateString('en-IN'),
-      payment_date: new Date(date || Date.now()).toLocaleDateString('en-IN'),
+      loan_id: paymentRef || rawLoan.loanId,
       payment_amount: numAmount,
-      principal_paid: principalPaidThisTime,
       interest_paid: interestPaidThisTime,
+      principal_paid: principalPaidThisTime,
       remaining_principal: updatedMetrics.outstandingPrincipal,
       remaining_interest: updatedMetrics.outstandingInterest,
       outstanding_amount: updatedMetrics.totalOutstanding,
-      due_date: new Date(updatedMetrics.nextDueDate).toLocaleDateString('en-IN'),
-      payments: rawLoan.payments || [],
-    }, `LOAN-PAYMENT-${rawLoan.loanId}-${paymentId}`).catch(err => console.error('Notification error:', err));
+      payment_date: new Date(date || Date.now()).toLocaleDateString('en-IN'),
+      due_date: updatedMetrics.nextDueDate ? new Date(updatedMetrics.nextDueDate).toLocaleDateString('en-IN') : 'N/A',
+    }, `LOAN-PAYMENT-${paymentRef || paymentId}`).catch(err => console.error('Notification error:', err));
+
     return res.status(200).json({
-      message: 'Loan payment recorded successfully',
-      payment: {
-        paymentId,
-        amount: numAmount,
-        interestPaid: interestPaidThisTime,
-        principalPaid: principalPaidThisTime,
-      },
+      message: 'Payment recorded successfully.',
+      paymentId,
+      paymentRef,
+      voucherRef: paymentRef,
       loan: updatedMetrics,
     });
   } catch (error) {
+    console.error('Loan payment error:', error);
     res.status(500).json({ error: error.message });
   }
 }

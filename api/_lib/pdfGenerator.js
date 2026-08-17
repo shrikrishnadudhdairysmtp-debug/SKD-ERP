@@ -271,7 +271,7 @@ export function generateTransactionPdf(type, data = {}, companyName = 'SKD ERP S
 
           historyRows.push([
             new Date(h.date).toLocaleDateString('en-IN'),
-            h.voucherId || h.id || 'TXN',
+            h.voucherRef || h.voucherId || h.id || 'TXN',
             h.remarks || h.description || h.category || 'Transaction Entry',
             dr > 0 ? formatPdfCurrency(dr) : '-',
             cr > 0 ? formatPdfCurrency(cr) : '-',
@@ -281,7 +281,7 @@ export function generateTransactionPdf(type, data = {}, companyName = 'SKD ERP S
       } else {
         historyRows.push([
           data.date || new Date().toLocaleDateString('en-IN'),
-          data.member_id || data.txn_id || 'TXN-1001',
+          data.voucherRef || data.memberRef || data.loanRef || data.member_id || data.txn_id || 'TXN-1001',
           data.remarks || (isMember ? 'Member Registration Ledger Opening' : 'Transaction Voucher Entry'),
           isMember ? '-' : formatPdfCurrency(data.payment_amount || data.total_amount),
           isMember ? '-' : '-',

@@ -130,6 +130,11 @@ const PartyManager = ({ onViewLedger }) => {
                     <span className={`party-type-badge ${isCustomer ? 'customer' : 'vendor'}`}>
                       {isCustomer ? 'Customer' : 'Vendor'}
                     </span>
+                    {party.memberRef && (
+                      <span className="party-type-badge" style={{ marginLeft: '0.4rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                        🆔 {party.memberRef}
+                      </span>
+                    )}
                     {partyLoans.length > 0 && (
                       <span className="party-type-badge vendor" style={{ marginLeft: '0.4rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
                         🏦 {partyLoans.length} Loan{partyLoans.length > 1 ? 's' : ''}

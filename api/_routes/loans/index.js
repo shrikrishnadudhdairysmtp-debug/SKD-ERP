@@ -1,9 +1,11 @@
 import dbConnect from '../../_lib/db.js';
 import Loan from '../../_models/Loan.js';
 import Transaction from '../../_models/Transaction.js';
+import Party from '../../_models/Party.js';
 import AuditTrail from '../../_models/AuditTrail.js';
 import { verifyAuth, requireRole } from '../../_lib/auth.js';
 import { sendNotification } from '../../_lib/emailService.js';
+import { generateVoucherRef } from '../../_lib/referenceGenerator.js';
 
 /**
  * Calculates loan summary metrics for a loan document.
@@ -30,7 +32,6 @@ export function calculateLoanMetrics(loan) {
   monthsElapsed = Math.max(1, monthsElapsed);
 
   // Monthly interest amount on initial principal (or current principal)
-  // Standard rule: 2% of initial loan amount per month accrued, or 2% of remaining principal
   const monthlyInterestAmount = (loanAmount * monthlyRate) / 100;
   const totalAccruedInterest = Math.round(monthsElapsed * monthlyInterestAmount);
   
@@ -48,7 +49,7 @@ export function calculateLoanMetrics(loan) {
   if (outstandingPrincipal <= 0 && currentStatus !== 'CLOSED') {
     currentStatus = 'COMPLETED';
   } else if (today > nextDueDate && currentStatus === 'ACTIVE' && outstandingInterest > 0) {
-    currentStatus = 'ACTIVE'; // or OVERDUE indicator
+    currentStatus = 'ACTIVE';
   }
 
   return {
@@ -72,11 +73,33 @@ export default async function handler(req, res) {
     const user = verifyAuth(req);
 
     if (req.method === 'GET') {
-      const { status, partyId } = req.query;
+      const { status, partyId, search, year, loanRef } = req.query;
       let filter = {};
 
       if (status && status !== 'ALL') filter.status = status;
       if (partyId) filter.partyId = partyId;
+
+      if (search) {
+        filter.$or = [
+          { loanId: { $regex: search, $options: 'i' } },
+          { loanRef: { $regex: search, $options: 'i' } },
+          { voucherRef: { $regex: search, $options: 'i' } },
+          { partyName: { $regex: search, $options: 'i' } },
+        ];
+      }
+
+      if (loanRef) {
+        filter.$or = [
+          { loanRef: { $regex: loanRef, $options: 'i' } },
+          { voucherRef: { $regex: loanRef, $options: 'i' } },
+        ];
+      }
+
+      if (year) {
+        const start = new Date(`${year}-01-01T00:00:00.000Z`);
+        const end = new Date(`${year}-12-31T23:59:59.999Z`);
+        filter.startDate = { $gte: start, $lte: end };
+      }
 
       const rawLoans = await Loan.find(filter).sort({ createdAt: -1 });
       const loans = rawLoans.map(calculateLoanMetrics);
@@ -123,8 +146,13 @@ export default async function handler(req, res) {
       const count = await Loan.countDocuments();
       const loanId = `LN-${1001 + count}`;
 
+      // Generate atomic reference: YYYY-OUT-LOAN-XXXXXX
+      const loanRef = await generateVoucherRef('OUT', 'LOAN', startDate);
+
       const loan = new Loan({
         loanId,
+        loanRef,
+        voucherRef: loanRef,
         partyId,
         partyName,
         loanAmount: numAmount,
@@ -139,33 +167,37 @@ export default async function handler(req, res) {
 
       // Automatically post double-entry disbursement transaction
       const txn = new Transaction({
+        voucherRef: loanRef,
+        refType: 'OUT',
+        refModule: 'LOAN',
         entries: [
-          { accountId: 'acc_expense', debit: numAmount, credit: 0 }, // Dr Loan Receivable / Issued
-          { accountId: disbursementMode || 'acc_bank', debit: 0, credit: numAmount }, // Cr Cash/Bank
+          { accountId: 'acc_expense', debit: numAmount, credit: 0 },
+          { accountId: disbursementMode || 'acc_bank', debit: 0, credit: numAmount },
         ],
         date: new Date(startDate),
-        remarks: `Loan Disbursement - ${loanId} for ${partyName}. ${remarks}`.trim(),
+        remarks: `Loan Disbursement (${loanRef} / ${loanId}) for ${partyName}. ${remarks}`.trim(),
         partyId,
         category: 'Investment',
         status: 'APPROVED',
         createdBy: user.name,
         createdById: user.id,
       });
+      await txn.save();
+
       await AuditTrail.create({
         action: 'LOAN_CREATED',
         user: user.name,
         role: user.role,
-        details: { loanId, partyName, amount: numAmount, monthlyInterestRate: rate },
+        details: { loanId, loanRef, partyName, amount: numAmount, monthlyInterestRate: rate },
       });
 
-      // Fetch dynamic party email after successful loan save
       const party = partyId ? await Party.findById(partyId) : null;
       const recipientEmail = party?.email || 'customer@skderp.com';
 
-      // Trigger automatic email notification after DB save
+      // Trigger automatic email notification
       sendNotification('LOAN_CREATED', recipientEmail, {
         customer_name: partyName,
-        loan_id: loanId,
+        loan_id: loanRef || loanId,
         loan_amount: numAmount,
         interest_rate: rate,
         monthly_interest: (numAmount * rate) / 100,

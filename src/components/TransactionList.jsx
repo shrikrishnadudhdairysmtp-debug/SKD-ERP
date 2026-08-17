@@ -38,6 +38,7 @@ const TransactionList = ({ transactions, onDelete, onEdit, pagination, onPageCha
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Voucher Ref</th>
                 <th>Remarks</th>
                 <th>Debit A/C</th>
                 <th>Credit A/C</th>
@@ -68,6 +69,11 @@ const TransactionList = ({ transactions, onDelete, onEdit, pagination, onPageCha
                 return (
                   <tr key={txn.id} className={txn.isDeleted ? 'deleted-row' : ''}>
                     <td>{new Date(txn.date).toLocaleDateString()}</td>
+                    <td>
+                      <code style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                        {txn.voucherRef || '-'}
+                      </code>
+                    </td>
                     <td className="remarks-cell">{txn.remarks || '-'}</td>
                     <td className="acc-cell">
                       <span className="acc-tag debit-tag">

@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 const partySchema = new mongoose.Schema(
   {
+    memberRef: { type: String, unique: true, sparse: true, index: true },
+    voucherRef: { type: String, unique: true, sparse: true, index: true },
     name: { type: String, required: true },
     type: { type: String, enum: ['CUSTOMER', 'VENDOR'], required: true },
     phone: { type: String, default: '' },

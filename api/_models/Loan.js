@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 const paymentSchema = new mongoose.Schema(
   {
+    paymentRef: { type: String },
+    voucherRef: { type: String },
     paymentId: { type: String, required: true },
     date: { type: Date, required: true },
     amount: { type: Number, required: true },
@@ -15,6 +17,8 @@ const paymentSchema = new mongoose.Schema(
 
 const loanSchema = new mongoose.Schema(
   {
+    loanRef: { type: String, unique: true, sparse: true, index: true },
+    voucherRef: { type: String, unique: true, sparse: true, index: true },
     loanId: {
       type: String,
       required: true,

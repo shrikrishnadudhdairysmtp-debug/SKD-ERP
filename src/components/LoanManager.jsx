@@ -100,6 +100,8 @@ const LoanManager = () => {
       const matchesStatus = statusFilter === 'ALL' || l.status === statusFilter;
       const matchesMember = memberFilter === 'ALL' || l.partyId === memberFilter;
       const matchesSearch = !searchTerm.trim() ||
+        (l.loanRef && l.loanRef.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (l.voucherRef && l.voucherRef.toLowerCase().includes(searchTerm.toLowerCase())) ||
         l.loanId.toLowerCase().includes(searchTerm.toLowerCase()) ||
         l.partyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (l.phone && l.phone.includes(searchTerm));
@@ -511,7 +513,7 @@ const LoanManager = () => {
                     return (
                       <tr key={loan.id || loan.loanId}>
                         <td>
-                          <span className="loan-id-link">{loan.loanId}</span>
+                          <span className="loan-id-link">{loan.loanRef || loan.voucherRef || loan.loanId}</span>
                         </td>
                         <td>
                           <div className="member-avatar-cell">
