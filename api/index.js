@@ -117,4 +117,10 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
+// Global JSON Error Handler
+app.use((err, _req, res, _next) => {
+  console.error('API Server Error:', err);
+  res.status(err.status || 500).json({ error: err.message || 'An internal server error occurred' });
+});
+
 export default app;

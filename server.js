@@ -123,6 +123,12 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
+// Global JSON Error Handler
+app.use((err, _req, res, _next) => {
+  console.error('API Server Error:', err);
+  res.status(err.status || 500).json({ error: err.message || 'An internal server error occurred' });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Backend API Server running on http://localhost:${PORT}`);

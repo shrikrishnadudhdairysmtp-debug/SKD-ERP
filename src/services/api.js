@@ -25,10 +25,22 @@ async function fetchWithAuth(endpoint, options = {}) {
     throw new Error('Unauthorized');
   }
 
-  const data = await response.json();
+  let data;
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      const text = await response.text();
+      data = { error: text || `HTTP ${response.status} ${response.statusText}` };
+    }
+  } else {
+    const text = await response.text();
+    data = { error: text || `HTTP ${response.status} ${response.statusText}` };
+  }
 
   if (!response.ok) {
-    throw new Error(data.error || 'API request failed');
+    throw new Error(data.error || `API request failed with status ${response.status}`);
   }
 
   return data;
