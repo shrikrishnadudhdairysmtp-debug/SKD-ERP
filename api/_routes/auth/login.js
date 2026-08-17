@@ -1,6 +1,7 @@
 import dbConnect from '../../_lib/db.js';
 import User from '../../_models/User.js';
 import { generateToken } from '../../_lib/auth.js';
+import { runSeed } from '../../_lib/seed.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -9,6 +10,12 @@ export default async function handler(req, res) {
 
   try {
     await dbConnect();
+
+    // Auto-seed default admin & system accounts if database is empty
+    const userCount = await User.countDocuments();
+    if (userCount === 0) {
+      await runSeed();
+    }
 
     const { userId, password } = req.body;
 
