@@ -54,30 +54,30 @@ function injectParams(req, _res, next) {
 }
 
 // Import Handlers
-const { default: healthHandler } = await import('./_routes/health.js');
-const { default: seedHandler } = await import('./_routes/seed.js');
-const { default: accountsHandler } = await import('./_routes/accounts/index.js');
-const { default: authLoginHandler } = await import('./_routes/auth/login.js');
-const { default: authMeHandler } = await import('./_routes/auth/me.js');
-const { default: categoriesHandler } = await import('./_routes/categories/index.js');
-const { default: dashboardHandler } = await import('./_routes/dashboard/index.js');
-const { default: partiesHandler } = await import('./_routes/parties/index.js');
-const { default: partyIdHandler } = await import('./_routes/parties/[id].js');
-const { default: transactionsHandler } = await import('./_routes/transactions/index.js');
-const { default: transactionIdHandler } = await import('./_routes/transactions/[id].js');
-const { default: usersHandler } = await import('./_routes/users/index.js');
-const { default: userIdHandler } = await import('./_routes/users/[id].js');
-const { default: userPermissionsHandler } = await import('./_routes/users/permissions.js');
-const { default: loansHandler } = await import('./_routes/loans/index.js');
-const { default: loanIdHandler } = await import('./_routes/loans/[id].js');
-const { default: loanPayHandler } = await import('./_routes/loans/[id]/pay.js');
+import healthHandler from './_routes/health.js';
+import seedHandler from './_routes/seed.js';
+import accountsHandler from './_routes/accounts/index.js';
+import authLoginHandler from './_routes/auth/login.js';
+import authMeHandler from './_routes/auth/me.js';
+import categoriesHandler from './_routes/categories/index.js';
+import dashboardHandler from './_routes/dashboard/index.js';
+import partiesHandler from './_routes/parties/index.js';
+import partyIdHandler from './_routes/parties/[id].js';
+import transactionsHandler from './_routes/transactions/index.js';
+import transactionIdHandler from './_routes/transactions/[id].js';
+import usersHandler from './_routes/users/index.js';
+import userIdHandler from './_routes/users/[id].js';
+import userPermissionsHandler from './_routes/users/permissions.js';
+import loansHandler from './_routes/loans/index.js';
+import loanIdHandler from './_routes/loans/[id].js';
+import loanPayHandler from './_routes/loans/[id]/pay.js';
 
-const { default: emailSettingsHandler } = await import('./_routes/email/settings.js');
-const { default: emailTemplatesHandler } = await import('./_routes/email/templates.js');
-const { default: emailTestHandler } = await import('./_routes/email/test.js');
-const { default: emailLogsHandler } = await import('./_routes/email/logs.js');
-const { default: emailResendHandler } = await import('./_routes/email/resend.js');
-const { default: emailReportHandler } = await import('./_routes/email/report.js');
+import emailSettingsHandler from './_routes/email/settings.js';
+import emailTemplatesHandler from './_routes/email/templates.js';
+import emailTestHandler from './_routes/email/test.js';
+import emailLogsHandler from './_routes/email/logs.js';
+import emailResendHandler from './_routes/email/resend.js';
+import emailReportHandler from './_routes/email/report.js';
 
 // Setup Routes
 app.all('/api/health', wrap(healthHandler));
