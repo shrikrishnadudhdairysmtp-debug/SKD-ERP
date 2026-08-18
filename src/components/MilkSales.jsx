@@ -48,8 +48,8 @@ const MilkSales = () => {
       const arEntry = t.entries.find(e => e.accountId.startsWith('acc_ar_'));
       const amount = arEntry ? arEntry.debit : 0;
       return {
-        id: t.id,
-        voucherNo: t.voucherNo,
+        id: t._id || t.id,
+        voucherNo: t.voucherRef || t.voucherNo || String(t._id || t.id).slice(-6),
         date: t.date,
         fromDate: t.fromDate || t.date,
         toDate: t.toDate || t.date,
@@ -74,8 +74,8 @@ const MilkSales = () => {
       const cashEntry = t.entries.find(e => e.accountId === 'acc_cash' || e.accountId === 'acc_bank');
       const amount = arEntry ? arEntry.debit : (cashEntry ? cashEntry.debit : 0);
       return {
-        id: t.id,
-        voucherNo: t.voucherNo,
+        id: t._id || t.id,
+        voucherNo: t.voucherRef || t.voucherNo || String(t._id || t.id).slice(-6),
         date: t.date,
         partyId: t.partyId,
         paymentType: t.paymentType || 'CASH',
@@ -91,20 +91,21 @@ const MilkSales = () => {
     return transactions.filter(t => 
       t.status === 'APPROVED' && 
       !t.isDeleted && 
-      t.type === 'RECEIPT' &&
+      (t.type === 'RECEIPT' || t.category === 'Milk Purchase' || t.category === 'Milk Sales' || t.refModule === 'MILK' || t.refModule === 'PAYMENT') &&
       t.entries && 
-      t.entries.some(e => e.accountId.startsWith('acc_ar_')) &&
+      t.entries.some(e => e.accountId?.startsWith('acc_ar_') && e.credit > 0) &&
       t.entries.some(e => e.accountId === 'acc_bank' || e.accountId === 'acc_cash')
     ).map(t => {
       const bankEntry = t.entries.find(e => e.accountId === 'acc_bank' || e.accountId === 'acc_cash');
-      const amount = bankEntry ? bankEntry.debit : 0;
+      const amount = bankEntry ? bankEntry.debit : (t.entries.find(e => e.accountId?.startsWith('acc_ar_'))?.credit || 0);
+      const parsedInvoice = t.invoiceNo || (t.remarks?.match(/Inv\s*#?\s*([A-Z0-9-]+)/i)?.[1]) || 'Direct Payout';
       return {
-        id: t.id,
-        voucherNo: t.voucherNo,
+        id: t._id || t.id,
+        voucherNo: t.voucherRef || t.voucherNo || String(t._id || t.id).slice(-6),
         date: t.date,
         partyId: t.partyId,
         remarks: t.remarks,
-        invoiceNo: t.invoiceNo || 'Direct Payout',
+        invoiceNo: parsedInvoice,
         paymentMode: t.paymentMode || 'BANK TRANSFER',
         refNo: t.refNo || '',
         amount,

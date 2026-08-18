@@ -14,6 +14,8 @@ const transactionSchema = new mongoose.Schema(
     voucherRef: { type: String, unique: true, sparse: true, index: true },
     refType: { type: String, enum: ['IN', 'OUT'], default: 'IN' },
     refModule: { type: String, default: 'TRANSACTION' },
+    invoiceNo: { type: String, default: null, index: true },
+    refNo: { type: String, default: null },
     entries: [entrySchema],
     date: { type: Date, required: true },
     remarks: { type: String, required: true },

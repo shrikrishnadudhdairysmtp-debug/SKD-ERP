@@ -70,11 +70,14 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       requireRole(user, 'ADMIN', 'CHECKER', 'MAKER');
 
-      const { entries, date, remarks, partyId, category, voucherRef: reqVoucherRef } = req.body;
+      const { entries, date, remarks, partyId, category, voucherRef: reqVoucherRef, invoiceNo: reqInvoiceNo, refNo: reqRefNo } = req.body;
 
       if (!entries || entries.length < 2 || !date || !remarks) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
+
+      // Extract invoiceNo from remarks if not provided directly
+      const parsedInvoiceNo = reqInvoiceNo || (remarks?.match(/Inv\s*#?\s*([A-Z0-9-]+)/i)?.[1]) || null;
 
       // ── Double-entry validation: debits must equal credits ───
       const totalDebits = entries.reduce((sum, e) => sum + (parseFloat(e.debit) || 0), 0);
@@ -127,6 +130,8 @@ export default async function handler(req, res) {
         voucherRef,
         refType,
         refModule,
+        invoiceNo: parsedInvoiceNo,
+        refNo: reqRefNo || null,
         entries,
         date,
         remarks,
