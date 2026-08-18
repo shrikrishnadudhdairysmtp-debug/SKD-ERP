@@ -10,7 +10,9 @@ import { generateTransactionPdf } from './pdfGenerator.js';
 export async function createTransporter() {
   await dbConnect();
 
-  const settings = await EmailSetting.findOne({ singletonKey: 'GLOBAL_SETTINGS' });
+  const settings = await EmailSetting.findOne({
+    $or: [{ key: 'GLOBAL_SETTINGS' }, { singletonKey: 'GLOBAL_SETTINGS' }]
+  });
 
   const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
   const portNum = Number(settings?.smtpPort || process.env.SMTP_PORT || 587);
@@ -20,7 +22,12 @@ export async function createTransporter() {
   const isSecure = portNum === 465;
 
   const user = settings?.smtpUsername || process.env.SMTP_USER || '';
-  const pass = settings?.smtpPassword || process.env.SMTP_PASS || '';
+  let pass = settings?.smtpPassword || process.env.SMTP_PASS || '';
+
+  // Filter out masked dummy bullets
+  if (pass && pass.startsWith('••••')) {
+    pass = process.env.SMTP_PASS || '';
+  }
 
   const senderName = settings?.senderName || 'SKD ERP Dairy System';
   const senderEmail = settings?.senderEmail || user || 'notifications@skderp.com';
@@ -44,19 +51,7 @@ export async function createTransporter() {
     return { transporter, senderName, senderEmail, isRealSmtp: true, settings };
   }
 
-  // Fallback Ethereal / Simulated local transporter if SMTP not configured
-  const testAccount = await nodemailer.createTestAccount();
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
-    secure: false,
-    auth: {
-      user: testAccount.user,
-      pass: testAccount.pass,
-    },
-  });
-
-  return { transporter, senderName, senderEmail, isRealSmtp: false, settings };
+  return { transporter: null, senderName, senderEmail, isRealSmtp: false, settings };
 }
 
 /**
@@ -116,10 +111,12 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
   try {
     await dbConnect();
 
-    const settings = await EmailSetting.findOne({ singletonKey: 'GLOBAL_SETTINGS' }) || {};
+    const settings = await EmailSetting.findOne({
+      $or: [{ key: 'GLOBAL_SETTINGS' }, { singletonKey: 'GLOBAL_SETTINGS' }]
+    }) || {};
 
     if (settings.enabled === false) {
-      return { status: 'DISABLED' };
+      return { status: 'DISABLED', errorMessage: 'Email notification dispatches are currently disabled in Settings.' };
     }
 
     const toggleKeyMap = {
@@ -134,7 +131,7 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
 
     const toggleKey = toggleKeyMap[type];
     if (toggleKey && settings.notificationToggles && settings.notificationToggles[toggleKey] === false) {
-      return { status: 'TOGGLE_DISABLED' };
+      return { status: 'TOGGLE_DISABLED', errorMessage: `Notification toggle for ${type} is disabled.` };
     }
 
     if (!recipient || !recipient.includes('@')) {
@@ -156,7 +153,7 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
     };
 
     const dataWithCompany = {
-      company_name: settings.companyName || 'SKD ERP',
+      company_name: settings.companyName || 'SKD ERP Services',
       customer_name: data.customer_name || data.partyName || data.name || 'Valued Customer',
       date: new Date().toLocaleDateString('en-IN'),
       ...data,
@@ -213,22 +210,12 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
       });
     }
 
-    // Immediately trigger active dispatch with up to 3 retries
-    try {
-      await processSingleEmail(emailLog._id);
-    } catch (dispatchErr) {
-      console.error('Email dispatch error:', dispatchErr);
-    }
-
-    const updatedLog = await EmailLog.findById(emailLog._id);
-    return {
-      status: updatedLog ? updatedLog.status : 'QUEUED',
-      logId: emailLog._id,
-      errorMessage: updatedLog ? updatedLog.errorMessage : null,
-    };
+    // Process real email delivery immediately
+    const dispatchResult = await processSingleEmail(emailLog._id);
+    return dispatchResult;
   } catch (error) {
     console.error(`Failed to dispatch notification ${type}:`, error);
-    return { status: 'ERROR', error: error.message };
+    return { status: 'FAILED', errorMessage: error.message };
   }
 }
 
@@ -249,9 +236,26 @@ export async function processSingleEmail(emailLogId) {
       { returnDocument: 'after' }
     );
 
-    if (!log) return;
+    if (!log) return { status: 'NOT_FOUND', errorMessage: 'Log entry not found or already processed.' };
 
     const { transporter, senderName, senderEmail, isRealSmtp } = await createTransporter();
+
+    // STRICT CHECK: If SMTP credentials are missing, fail immediately without pretending success
+    if (!isRealSmtp || !transporter) {
+      const errorMsg = 'SMTP Server Not Configured. Please set your SMTP Host, Username, and App Password in Email Settings.';
+      await EmailLog.updateOne(
+        { _id: log._id },
+        {
+          $set: {
+            status: 'FAILED',
+            errorMessage: errorMsg,
+            isRealSmtp: false,
+          }
+        }
+      );
+      console.error(`❌ [SMTP NOT CONFIG] To: ${log.recipient} | Error: ${errorMsg}`);
+      return { status: 'FAILED', logId: log._id, errorMessage: errorMsg };
+    }
 
     const mailOptions = {
       from: `"${senderName}" <${senderEmail}>`,
@@ -287,11 +291,12 @@ export async function processSingleEmail(emailLogId) {
     const maxRetries = log.maxRetries || 3;
     let lastError = null;
     let success = false;
+    let successResult = null;
 
     // Immediate active retry loop up to 3 times
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log(`🚀 [EMAIL DISPATCH] Attempt ${attempt}/${maxRetries} to ${log.recipient} ("${log.subject}")...`);
+        console.log(`🚀 [REAL SMTP DISPATCH] Attempt ${attempt}/${maxRetries} to ${log.recipient} ("${log.subject}")...`);
 
         await EmailLog.updateOne(
           { _id: log._id },
@@ -299,6 +304,8 @@ export async function processSingleEmail(emailLogId) {
         );
 
         const sendResult = await transporter.sendMail(mailOptions);
+        const msgId = sendResult.messageId || `MSG-${Date.now()}`;
+        const providerResp = sendResult.response || '250 Message accepted for delivery';
 
         await EmailLog.updateOne(
           { _id: log._id },
@@ -307,17 +314,22 @@ export async function processSingleEmail(emailLogId) {
               status: 'SENT',
               sentAt: new Date(),
               retryCount: attempt,
-              errorMessage: isRealSmtp ? '' : 'SMTP credentials not set; email was simulated locally.',
-              metadata: { ...log.metadata, messageId: sendResult.messageId, isRealSmtp },
+              sender: mailOptions.from,
+              messageId: msgId,
+              providerResponse: providerResp,
+              isRealSmtp: true,
+              errorMessage: '',
+              metadata: { ...log.metadata, messageId: msgId, response: providerResp, accepted: sendResult.accepted },
             }
           }
         );
-        console.log(`⚡ [EMAIL DISPATCH SUCCESS] Attempt ${attempt}/${maxRetries} | To: ${log.recipient} | SMTP: ${isRealSmtp ? 'REAL' : 'SIMULATED'}`);
+        console.log(`⚡ [REAL SMTP DISPATCH SUCCESS] Attempt ${attempt}/${maxRetries} | To: ${log.recipient} | MsgID: ${msgId} | Response: ${providerResp}`);
         success = true;
+        successResult = { status: 'SENT', logId: log._id, messageId: msgId, providerResponse: providerResp };
         break; // Exit retry loop immediately on success!
       } catch (err) {
         lastError = err;
-        console.error(`⚠️ [EMAIL DISPATCH FAILED] Attempt ${attempt}/${maxRetries} to ${log.recipient}: ${err.message}`);
+        console.error(`⚠️ [REAL SMTP DISPATCH FAILED] Attempt ${attempt}/${maxRetries} to ${log.recipient}: ${err.message}`);
         
         if (attempt < maxRetries) {
           // Pause 1 second before immediate next retry attempt
@@ -327,20 +339,28 @@ export async function processSingleEmail(emailLogId) {
     }
 
     if (!success) {
+      const failureMsg = `SMTP Delivery Failed after ${maxRetries} attempts: ${lastError ? lastError.message : 'Unknown transport error'}`;
       await EmailLog.updateOne(
         { _id: log._id },
         {
           $set: {
             status: 'FAILED',
             retryCount: maxRetries,
-            errorMessage: `Failed after ${maxRetries} immediate attempts: ${lastError ? lastError.message : 'Unknown transport error'}`,
+            sender: mailOptions.from,
+            isRealSmtp: true,
+            errorMessage: failureMsg,
+            providerResponse: lastError ? (lastError.response || lastError.code || 'SMTP_ERROR') : 'FAILED',
           }
         }
       );
-      console.error(`❌ [EMAIL DISPATCH PERMANENT FAILURE] All ${maxRetries} immediate retry attempts failed for ${log.recipient}.`);
+      console.error(`❌ [SMTP PERMANENT FAILURE] All ${maxRetries} retry attempts failed for ${log.recipient}. Reason: ${failureMsg}`);
+      return { status: 'FAILED', logId: log._id, errorMessage: failureMsg };
     }
+
+    return successResult;
   } catch (err) {
     console.error('Single email process error:', err);
+    return { status: 'FAILED', errorMessage: err.message };
   }
 }
 

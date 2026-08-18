@@ -35,6 +35,11 @@ const EmailLogSchema = new mongoose.Schema({
     index: true,
   },
 
+  sender: { type: String, default: '' },
+  messageId: { type: String, default: '', index: true },
+  providerResponse: { type: String, default: '' },
+  isRealSmtp: { type: Boolean, default: false },
+
   retryCount: { type: Number, default: 0 },
   maxRetries: { type: Number, default: 3 },
   errorMessage: { type: String, default: '' },

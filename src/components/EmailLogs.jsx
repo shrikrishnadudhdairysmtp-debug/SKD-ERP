@@ -247,10 +247,17 @@ const EmailLogs = () => {
               <button className="btn-modal-close" onClick={() => setSelectedLog(null)}>✕</button>
             </div>
 
-            <div className="email-preview-content">
+            <div className="email-preview-content" style={{ padding: '15px 0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: 'rgba(15, 23, 42, 0.5)', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontSize: '0.85rem' }}>
+                <div><strong>Sender:</strong> <span style={{ color: '#60a5fa' }}>{selectedLog.sender || 'System Default'}</span></div>
+                <div><strong>Recipient:</strong> <span style={{ color: '#10b981' }}>{selectedLog.recipient}</span></div>
+                <div><strong>Message ID:</strong> <code>{selectedLog.messageId || 'N/A'}</code></div>
+                <div><strong>Provider Response:</strong> <code style={{ color: selectedLog.status === 'SENT' ? '#10b981' : '#ef4444' }}>{selectedLog.providerResponse || 'N/A'}</code></div>
+              </div>
+
               {selectedLog.status === 'FAILED' && selectedLog.errorMessage && (
-                <div className="error-banner-box">
-                  <strong>⚠️ Last Failure Reason:</strong> {selectedLog.errorMessage}
+                <div className="error-banner-box" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #ef4444' }}>
+                  <strong>⚠️ Delivery Failure Reason:</strong> {selectedLog.errorMessage}
                 </div>
               )}
               <div
