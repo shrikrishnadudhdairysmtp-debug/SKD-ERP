@@ -45,13 +45,41 @@ const ApprovalQueue = () => {
 
   const isChecker = currentUser.role === 'ADMIN' || currentUser.role === 'CHECKER';
 
+  const handleBatchApprove = async () => {
+    const approvable = pendingTransactions.filter(t => !isSelfCreated(t));
+    if (approvable.length === 0) {
+      showWarning('No transactions available for approval by you (self-created transactions must be reviewed by another user).');
+      return;
+    }
+    if (confirm(`Approve all ${approvable.length} pending transactions immediately?`)) {
+      for (const t of approvable) {
+        await approveTransaction(t.id);
+      }
+    }
+  };
+
   return (
     <div className="approval-queue">
-      <div className="approval-header">
-        <h3 className="section-title">Pending Approvals</h3>
-        <span className="approval-count-badge">
-          {pendingTransactions.length} pending
-        </span>
+      <div className="approval-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h3 className="section-title" style={{ margin: 0 }}>Pending Queue</h3>
+          <span className="subtitle" style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Real-time background transaction approval pipeline</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span className="approval-count-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: '0.9rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold' }}>
+            🟡 Pending in Queue: {pendingTransactions.length}
+          </span>
+          {isChecker && pendingTransactions.length > 0 && (
+            <button
+              className="primary-btn"
+              onClick={handleBatchApprove}
+              disabled={isLoading}
+              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '0.85rem' }}
+            >
+              ✓ Approve All Pending ({pendingTransactions.filter(t => !isSelfCreated(t)).length})
+            </button>
+          )}
+        </div>
       </div>
 
       {!isChecker && (

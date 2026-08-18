@@ -4,85 +4,36 @@ import EmailSetting from '../_models/EmailSetting.js';
 import EmailLog from '../_models/EmailLog.js';
 import { generateTransactionPdf } from './pdfGenerator.js';
 
-// Singleton Transporter Cache for Performance
-let cachedTransporter = null;
-let cachedSettingsHash = '';
-
 /**
- * Fetch or initialize global email settings.
- */
-export async function getEmailSettings() {
-  await dbConnect();
-  let settings = await EmailSetting.findOne({ key: 'GLOBAL_SETTINGS' });
-  if (!settings) {
-    try {
-      settings = await EmailSetting.create({ key: 'GLOBAL_SETTINGS' });
-    } catch (err) {
-      if (err.code === 11000) {
-        settings = await EmailSetting.findOne({ key: 'GLOBAL_SETTINGS' });
-      } else {
-        throw err;
-      }
-    }
-  }
-  return settings;
-}
-
-/**
- * Replace placeholders like {{customer_name}}, {{loan_amount}} with actual values.
- */
-export function replaceVariables(templateStr = '', data = {}) {
-  if (!templateStr) return '';
-  return templateStr.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
-    const val = data[key];
-    if (val !== undefined && val !== null) {
-      if (typeof val === 'number') {
-        return val.toLocaleString('en-IN');
-      }
-      return String(val);
-    }
-    return '';
-  });
-}
-
-/**
- * Get or create Nodemailer Transporter.
- * Prioritizes Environment Variables (SMTP_HOST, SMTP_USER, SMTP_PASS), then falls back to MongoDB settings.
+ * Creates Nodemailer transporter using dynamic database settings or environment variables
  */
 export async function createTransporter() {
-  const settings = await getEmailSettings();
+  await dbConnect();
 
-  const host = process.env.SMTP_HOST || process.env.EMAIL_HOST || settings.smtpHost;
-  const portNum = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || settings.smtpPort) || 587;
-  const username = process.env.SMTP_USER || process.env.EMAIL_USER || settings.smtpUsername;
-  const password = process.env.SMTP_PASS || process.env.EMAIL_PASS || settings.smtpPassword;
-  const senderName = process.env.SENDER_NAME || settings.senderName || 'SKD ERP Financial System';
-  const senderEmail = process.env.SENDER_EMAIL || settings.senderEmail || username || 'noreply@skderp.com';
-  const isEnabled = process.env.SMTP_ENABLED !== undefined ? process.env.SMTP_ENABLED === 'true' : settings.enabled;
-  // Force secure: true ONLY for Port 465 (Direct SSL/TLS). For Port 587/25/2525, secure MUST be false (STARTTLS) to prevent OpenSSL 'wrong version number' errors.
+  const settings = await EmailSetting.findOne({ singletonKey: 'GLOBAL_SETTINGS' });
+
+  const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
+  const portNum = Number(settings?.smtpPort || process.env.SMTP_PORT || 587);
+
+  // Force secure: true ONLY for Port 465 (Direct SSL/TLS).
+  // For Port 587/25/2525, secure MUST be false (STARTTLS) to prevent OpenSSL 'wrong version number' errors.
   const isSecure = portNum === 465;
 
-  if (isEnabled && host && username && password) {
-    const currentHash = `${host}:${portNum}:${username}:${password}:${isSecure}`;
+  const user = settings?.smtpUsername || process.env.SMTP_USER || '';
+  const pass = settings?.smtpPassword || process.env.SMTP_PASS || '';
 
-    if (cachedTransporter && cachedSettingsHash === currentHash) {
-      return {
-        transporter: cachedTransporter,
-        senderName,
-        senderEmail,
-        isRealSmtp: true,
-      };
-    }
+  const senderName = settings?.senderName || 'SKD ERP Dairy System';
+  const senderEmail = settings?.senderEmail || user || 'notifications@skderp.com';
 
-    cachedTransporter = nodemailer.createTransport({
+  const isRealSmtp = Boolean(user && pass);
+
+  if (isRealSmtp) {
+    const transporter = nodemailer.createTransport({
       host,
       port: portNum,
-      secure: isSecure, // true for 465, false for 587 / STARTTLS
-      auth: {
-        user: username,
-        pass: password,
-      },
-      connectionTimeout: 10000, // 10s connection timeout for serverless functions
+      secure: isSecure,
+      auth: { user, pass },
+      connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
       tls: {
@@ -90,91 +41,91 @@ export async function createTransporter() {
       },
     });
 
-    cachedSettingsHash = currentHash;
-
-    return {
-      transporter: cachedTransporter,
-      senderName,
-      senderEmail,
-      isRealSmtp: true,
-    };
+    return { transporter, senderName, senderEmail, isRealSmtp: true, settings };
   }
 
-  // Fallback: Simulated logger transport when SMTP credentials aren't set yet
-  return {
-    transporter: {
-      sendMail: async (mailOptions) => {
-        console.log(`[SIMULATED EMAIL LOG] To: ${mailOptions.to} | Subject: "${mailOptions.subject}"`);
-        return { messageId: `simulated-${Date.now()}` };
-      }
+  // Fallback Ethereal / Simulated local transporter if SMTP not configured
+  const testAccount = await nodemailer.createTestAccount();
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.ethereal.email',
+    port: 587,
+    secure: false,
+    auth: {
+      user: testAccount.user,
+      pass: testAccount.pass,
     },
-    senderName,
-    senderEmail,
-    isRealSmtp: false,
-  };
+  });
+
+  return { transporter, senderName, senderEmail, isRealSmtp: false, settings };
 }
 
 /**
- * Premium Modern HTML Email Layout Builder
+ * Helper to replace {{template_variables}} in email subject/body
  */
-function buildPremiumHtmlEmail(subject, bodyContent, companyName, companyContact) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px; color: #1e293b; }
-    .email-container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
-    .email-header { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); padding: 24px 30px; text-align: left; }
-    .email-header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-    .email-header p { color: #93c5fd; margin: 4px 0 0 0; font-size: 13px; }
-    .email-body { padding: 30px; font-size: 15px; line-height: 1.6; color: #334155; }
-    .email-body p { margin-top: 0; margin-bottom: 16px; }
-    .email-footer { background-color: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
-    .email-badge { display: inline-block; padding: 4px 10px; background: #e0f2fe; color: #0369a1; font-weight: 600; border-radius: 4px; font-size: 12px; margin-bottom: 16px; }
-  </style>
-</head>
-<body>
-  <div class="email-container">
-    <div class="email-header">
-      <h1>${companyName || 'SKD ERP Financial System'}</h1>
-      <p>Official System Notification</p>
-    </div>
-    <div class="email-body">
-      <div class="email-badge">✓ Verified System Transaction</div>
-      <div style="white-space: pre-wrap;">${bodyContent}</div>
-    </div>
-    <div class="email-footer">
-      <p style="margin: 0 0 4px 0;"><strong>${companyName || 'SKD ERP'}</strong> • ${companyContact || 'Support & Customer Desk'}</p>
-      <p style="margin: 0; color: #94a3b8;">This is an automated notification. Please do not reply directly to this email.</p>
-    </div>
-  </div>
-</body>
-</html>`;
+function replaceVariables(templateStr, data) {
+  if (!templateStr) return '';
+  return templateStr.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+    return data[key] !== undefined && data[key] !== null ? data[key] : `{{${key}}}`;
+  });
 }
 
 /**
- * Centralized Reusable Notification Function (Serverless-Safe Synchronous Dispatch)
+ * Premium Responsive HTML Email Layout Wrapper
+ */
+function buildPremiumHtmlEmail(subject, bodyText, companyName = 'SKD ERP Dairy System', contact = 'support@skderp.com') {
+  const formattedBody = bodyText.replace(/\n/g, '<br/>');
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #2563eb, #1d4ed8); padding: 24px; text-align: center; }
+        .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; }
+        .content { padding: 28px; line-height: 1.6; font-size: 15px; color: #cbd5e1; }
+        .footer { background-color: #0f172a; padding: 18px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #334155; }
+        .badge { display: inline-block; padding: 4px 12px; background: #3b82f622; color: #60a5fa; border-radius: 9999px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>${companyName}</h1>
+        </div>
+        <div class="content">
+          <div class="badge">Official Transaction Notice</div>
+          <h2 style="color: #ffffff; font-size: 18px; margin-top: 0;">${subject}</h2>
+          <div>${formattedBody}</div>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} ${companyName}. All rights reserved.</p>
+          <p>Need assistance? Contact us at ${contact}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Main Email Notification Dispatcher Engine
  */
 export async function sendNotification(type, recipient, data = {}, eventRefId = null, attachments = []) {
   try {
     await dbConnect();
-    const settings = await getEmailSettings();
 
-    // Check global toggle
-    if (!settings.enabled) {
+    const settings = await EmailSetting.findOne({ singletonKey: 'GLOBAL_SETTINGS' }) || {};
+
+    if (settings.enabled === false) {
       return { status: 'DISABLED' };
     }
 
-    // Check event toggle
     const toggleKeyMap = {
-      NEW_MEMBER: 'newMember',
-      LOAN_CREATED: 'newLoan',
-      LOAN_PAYMENT: 'paymentReceived',
-      PAYMENT_REMINDER: 'paymentReminder',
-      PAYMENT_OVERDUE: 'overduePayment',
+      NEW_MEMBER: 'memberRegistration',
+      LOAN_CREATED: 'loanDisbursal',
+      LOAN_PAYMENT: 'loanPayment',
       MILK_COLLECTION: 'milkCollection',
       PAYMENT_RECEIVED: 'paymentReceived',
       LOAN_CLOSED: 'loanClosure',
@@ -262,7 +213,7 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
       });
     }
 
-    // Synchronously dispatch email so Vercel Serverless container doesn't freeze mid-transmission
+    // Immediately trigger active dispatch with up to 3 retries
     try {
       await processSingleEmail(emailLog._id);
     } catch (dispatchErr) {
@@ -282,7 +233,7 @@ export async function sendNotification(type, recipient, data = {}, eventRefId = 
 }
 
 /**
- * Single Email Dispatcher
+ * Single Email Dispatcher with Active Immediate Retry Loop (Up to 3 Times)
  */
 export async function processSingleEmail(emailLogId) {
   try {
@@ -292,7 +243,7 @@ export async function processSingleEmail(emailLogId) {
     const log = await EmailLog.findOneAndUpdate(
       {
         _id: emailLogId,
-        status: { $in: ['PENDING', 'FAILED'] },
+        status: { $in: ['PENDING', 'FAILED', 'PROCESSING'] },
       },
       { $set: { status: 'PROCESSING' } },
       { returnDocument: 'after' }
@@ -333,35 +284,60 @@ export async function processSingleEmail(emailLogId) {
       });
     }
 
-    try {
-      const sendResult = await transporter.sendMail(mailOptions);
+    const maxRetries = log.maxRetries || 3;
+    let lastError = null;
+    let success = false;
 
+    // Immediate active retry loop up to 3 times
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🚀 [EMAIL DISPATCH] Attempt ${attempt}/${maxRetries} to ${log.recipient} ("${log.subject}")...`);
+
+        await EmailLog.updateOne(
+          { _id: log._id },
+          { $set: { retryCount: attempt, status: 'PROCESSING', errorMessage: `Attempt ${attempt}/${maxRetries} in progress...` } }
+        );
+
+        const sendResult = await transporter.sendMail(mailOptions);
+
+        await EmailLog.updateOne(
+          { _id: log._id },
+          {
+            $set: {
+              status: 'SENT',
+              sentAt: new Date(),
+              retryCount: attempt,
+              errorMessage: isRealSmtp ? '' : 'SMTP credentials not set; email was simulated locally.',
+              metadata: { ...log.metadata, messageId: sendResult.messageId, isRealSmtp },
+            }
+          }
+        );
+        console.log(`⚡ [EMAIL DISPATCH SUCCESS] Attempt ${attempt}/${maxRetries} | To: ${log.recipient} | SMTP: ${isRealSmtp ? 'REAL' : 'SIMULATED'}`);
+        success = true;
+        break; // Exit retry loop immediately on success!
+      } catch (err) {
+        lastError = err;
+        console.error(`⚠️ [EMAIL DISPATCH FAILED] Attempt ${attempt}/${maxRetries} to ${log.recipient}: ${err.message}`);
+        
+        if (attempt < maxRetries) {
+          // Pause 1 second before immediate next retry attempt
+          await new Promise(res => setTimeout(res, 1000));
+        }
+      }
+    }
+
+    if (!success) {
       await EmailLog.updateOne(
         { _id: log._id },
         {
           $set: {
-            status: 'SENT',
-            sentAt: new Date(),
-            errorMessage: isRealSmtp ? '' : 'SMTP credentials not set; email was simulated locally.',
-            metadata: { ...log.metadata, messageId: sendResult.messageId, isRealSmtp },
+            status: 'FAILED',
+            retryCount: maxRetries,
+            errorMessage: `Failed after ${maxRetries} immediate attempts: ${lastError ? lastError.message : 'Unknown transport error'}`,
           }
         }
       );
-      console.log(`⚡ [EMAIL DISPATCH SUCCESS] To: ${log.recipient} | Subject: "${log.subject}" | SMTP: ${isRealSmtp ? 'REAL' : 'SIMULATED'}`);
-    } catch (err) {
-      const newRetry = (log.retryCount || 0) + 1;
-      const isFailed = newRetry >= (log.maxRetries || 3);
-      await EmailLog.updateOne(
-        { _id: log._id },
-        {
-          $set: {
-            retryCount: newRetry,
-            errorMessage: err.message || 'Delivery failed',
-            status: isFailed ? 'FAILED' : 'PENDING',
-          }
-        }
-      );
-      console.error(`❌ Email send failed (Attempt ${newRetry}/${log.maxRetries || 3}): ${err.message}`);
+      console.error(`❌ [EMAIL DISPATCH PERMANENT FAILURE] All ${maxRetries} immediate retry attempts failed for ${log.recipient}.`);
     }
   } catch (err) {
     console.error('Single email process error:', err);
@@ -369,20 +345,18 @@ export async function processSingleEmail(emailLogId) {
 }
 
 /**
- * Queue Processing Engine
+ * Process all pending & failed emails with immediate retries
  */
-export async function processEmailQueue() {
-  try {
-    await dbConnect();
-    const pendingLogs = await EmailLog.find({
-      status: { $in: ['PENDING', 'FAILED'] },
-      $expr: { $lt: ['$retryCount', '$maxRetries'] }
-    }).limit(10);
-
-    if (pendingLogs.length > 0) {
-      await Promise.allSettled(pendingLogs.map(log => processSingleEmail(log._id)));
-    }
-  } catch (err) {
-    console.error('Queue processing worker error:', err);
+export async function processPendingQueue() {
+  await dbConnect();
+  const pendingLogs = await EmailLog.find({ status: { $in: ['PENDING', 'FAILED'] } }).sort({ createdAt: 1 }).limit(50);
+  console.log(`🔄 Processing ${pendingLogs.length} pending queue email items...`);
+  
+  let processed = 0;
+  for (const log of pendingLogs) {
+    await processSingleEmail(log._id);
+    processed++;
   }
+  
+  return { total: pendingLogs.length, processed };
 }

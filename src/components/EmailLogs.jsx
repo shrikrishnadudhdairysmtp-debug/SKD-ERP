@@ -57,17 +57,42 @@ const EmailLogs = () => {
     }
   };
 
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+
+  const handleProcessQueue = async () => {
+    setIsProcessingQueue(true);
+    try {
+      const res = await emailService.processPendingQueue();
+      showSuccess(res.message || 'Processed pending queue items with up to 3 retries!');
+      fetchLogs();
+    } catch (err) {
+      showError(err.message || 'Failed to process queue');
+    } finally {
+      setIsProcessingQueue(false);
+    }
+  };
+
   return (
     <div className="email-logs-page page-container fade-in">
       {/* Header Bar */}
       <div className="page-header-bar">
         <div>
           <h2>Email History Logs & Queue</h2>
-          <p className="subtitle">Audit history, delivery statuses, retry logs, and manual email resend</p>
+          <p className="subtitle">Audit history, delivery statuses, retry logs, and active 3x retry dispatch</p>
         </div>
-        <button className="action-btn refresh-btn" onClick={fetchLogs} disabled={isLoading}>
-          🔄 Refresh Logs
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            className="primary-btn"
+            onClick={handleProcessQueue}
+            disabled={isProcessingQueue || isLoading}
+            style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+          >
+            {isProcessingQueue ? 'Processing Retries...' : '⚡ Process Pending Queue (Up to 3x Retry)'}
+          </button>
+          <button className="action-btn refresh-btn" onClick={fetchLogs} disabled={isLoading}>
+            🔄 Refresh Logs
+          </button>
+        </div>
       </div>
 
       {/* Overview Metrics Cards */}

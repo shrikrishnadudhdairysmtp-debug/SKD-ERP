@@ -37,4 +37,9 @@ export const emailService = {
   resendEmail: async (logId) => {
     return await api.post('/email/resend', { id: logId });
   },
+
+  // Process Pending Queue with Immediate 3x Retry Loop
+  processPendingQueue: async () => {
+    return await api.post('/email/process-queue');
+  },
 };
