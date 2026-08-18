@@ -82,6 +82,7 @@ import emailTestHandler from './_routes/email/test.js';
 import emailLogsHandler from './_routes/email/logs.js';
 import emailResendHandler from './_routes/email/resend.js';
 import emailReportHandler from './_routes/email/report.js';
+import emailProcessQueueHandler from './_routes/email/process-queue.js';
 
 // Setup Routes (supporting both /api/path and /path for Vercel rewrites)
 app.all(['/api/health', '/health'], wrap(healthHandler));
@@ -115,6 +116,7 @@ app.all(['/api/email/test', '/email/test'], wrap(emailTestHandler));
 app.all(['/api/email/logs', '/email/logs'], wrap(emailLogsHandler));
 app.all(['/api/email/resend', '/email/resend'], wrap(emailResendHandler));
 app.all(['/api/email/report', '/email/report'], wrap(emailReportHandler));
+app.all(['/api/email/process-queue', '/email/process-queue'], wrap(emailProcessQueueHandler));
 
 // 404 Fallback
 app.use((_req, res) => {

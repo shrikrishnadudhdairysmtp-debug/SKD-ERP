@@ -78,7 +78,8 @@ import emailTestHandler from './api/_routes/email/test.js';
 import emailLogsHandler from './api/_routes/email/logs.js';
 import emailResendHandler from './api/_routes/email/resend.js';
 import emailReportHandler from './api/_routes/email/report.js';
-import { processEmailQueue } from './api/_lib/emailService.js';
+import emailProcessQueueHandler from './api/_routes/email/process-queue.js';
+import { processPendingQueue } from './api/_lib/emailService.js';
 
 // Setup Routes
 app.all('/api/health', wrap(healthHandler));
@@ -112,10 +113,11 @@ app.all('/api/email/test', wrap(emailTestHandler));
 app.all('/api/email/logs', wrap(emailLogsHandler));
 app.all('/api/email/resend', wrap(emailResendHandler));
 app.all('/api/email/report', wrap(emailReportHandler));
+app.all('/api/email/process-queue', wrap(emailProcessQueueHandler));
 
 // Start Background Email Queue Worker (runs every 5 seconds)
 setInterval(() => {
-  processEmailQueue().catch(err => console.error('Background email queue error:', err));
+  processPendingQueue().catch(err => console.error('Background email queue error:', err));
 }, 5000);
 
 // 404 Fallback
