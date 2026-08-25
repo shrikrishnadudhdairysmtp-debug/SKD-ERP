@@ -89,6 +89,13 @@ const icons = {
       <path d="M7 5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
     </svg>
   ),
+  NFPS_CONVERTER: (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 8h8M5 11h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <path d="M12 12l2 2m0-2l-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  ),
 };
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
@@ -99,6 +106,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
     { id: 'PARTIES',        label: 'Members',         show: currentUser?.permissions?.pages?.parties },
     { id: 'MILK_SALES',     label: 'Milk Collection', show: true },
     { id: 'TRANSACTIONS',   label: 'Sales & Billing', show: currentUser?.permissions?.pages?.transactions },
+    { id: 'NFPS_CONVERTER', label: 'NFPS/NEFT Conversion', show: true },
     { id: 'CASH_FLOW',      label: 'Inventory',       show: true },
     { id: 'LEDGER',         label: 'Finance',         show: currentUser?.permissions?.pages?.ledger },
     {

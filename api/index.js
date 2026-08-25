@@ -84,6 +84,10 @@ import emailResendHandler from './_routes/email/resend.js';
 import emailReportHandler from './_routes/email/report.js';
 import emailProcessQueueHandler from './_routes/email/process-queue.js';
 
+import nfpsUploadParseHandler from './_routes/nfps/upload-parse.js';
+import nfpsGenerateHandler from './_routes/nfps/generate.js';
+import nfpsBatchesHandler from './_routes/nfps/batches.js';
+
 // Setup Routes (supporting both /api/path and /path for Vercel rewrites)
 app.all(['/api/health', '/health'], wrap(healthHandler));
 app.all(['/api/seed', '/seed'], wrap(seedHandler));
@@ -117,6 +121,10 @@ app.all(['/api/email/logs', '/email/logs'], wrap(emailLogsHandler));
 app.all(['/api/email/resend', '/email/resend'], wrap(emailResendHandler));
 app.all(['/api/email/report', '/email/report'], wrap(emailReportHandler));
 app.all(['/api/email/process-queue', '/email/process-queue'], wrap(emailProcessQueueHandler));
+
+app.all(['/api/nfps/upload-parse', '/nfps/upload-parse'], wrap(nfpsUploadParseHandler));
+app.all(['/api/nfps/generate', '/nfps/generate'], wrap(nfpsGenerateHandler));
+app.all(['/api/nfps/batches', '/nfps/batches'], wrap(nfpsBatchesHandler));
 
 // 404 Fallback
 app.use((_req, res) => {

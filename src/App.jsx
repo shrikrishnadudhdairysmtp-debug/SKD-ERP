@@ -21,6 +21,7 @@ import MilkSales from './components/MilkSales.jsx'
 import LoanManager from './components/LoanManager.jsx'
 import EmailSettings from './components/EmailSettings.jsx'
 import EmailLogs from './components/EmailLogs.jsx'
+import NfpsConverter from './components/NfpsConverter.jsx'
 import { emailService } from './services/emailService.js'
 
 
@@ -190,6 +191,7 @@ function App() {
     OVERVIEW: 'Dashboard Overview',
     ANALYTICS: 'Analytics Hub',
     TRANSACTIONS: 'Manage Transactions',
+    NFPS_CONVERTER: 'Payments → Bank Statement → NFPS/NEFT Conversion',
     APPROVALS: 'Approval Queue',
     LEDGER: 'General Ledger',
     PARTIES: 'Special Person Accounts',
@@ -336,6 +338,12 @@ function App() {
           {activeTab === 'MILK_SALES' && (
             <div className="fade-in">
               <MilkSales />
+            </div>
+          )}
+
+          {activeTab === 'NFPS_CONVERTER' && (
+            <div className="fade-in">
+              <NfpsConverter />
             </div>
           )}
 

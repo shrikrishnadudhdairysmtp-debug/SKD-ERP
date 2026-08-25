@@ -79,6 +79,9 @@ import emailLogsHandler from './api/_routes/email/logs.js';
 import emailResendHandler from './api/_routes/email/resend.js';
 import emailReportHandler from './api/_routes/email/report.js';
 import emailProcessQueueHandler from './api/_routes/email/process-queue.js';
+import nfpsUploadParseHandler from './api/_routes/nfps/upload-parse.js';
+import nfpsGenerateHandler from './api/_routes/nfps/generate.js';
+import nfpsBatchesHandler from './api/_routes/nfps/batches.js';
 import { processPendingQueue } from './api/_lib/emailService.js';
 
 // Setup Routes
@@ -114,6 +117,10 @@ app.all('/api/email/logs', wrap(emailLogsHandler));
 app.all('/api/email/resend', wrap(emailResendHandler));
 app.all('/api/email/report', wrap(emailReportHandler));
 app.all('/api/email/process-queue', wrap(emailProcessQueueHandler));
+
+app.all('/api/nfps/upload-parse', wrap(nfpsUploadParseHandler));
+app.all('/api/nfps/generate', wrap(nfpsGenerateHandler));
+app.all('/api/nfps/batches', wrap(nfpsBatchesHandler));
 
 // Start Background Email Queue Worker (runs every 5 seconds)
 setInterval(() => {
