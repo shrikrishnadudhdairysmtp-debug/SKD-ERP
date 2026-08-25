@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx';
 import dbConnect from './db.js';
 import NfpsRecord from '../_models/NfpsRecord.js';
-import { generateVoucherRef } from './referenceGenerator.js';
 
 /**
  * Clean string helper
@@ -14,7 +13,6 @@ function cleanStr(val) {
 /**
  * Standard IFSC Code Validator (4 letters + 0 + 6 alphanumeric characters)
  */
-
 export function validateIfsc(ifsc) {
   if (!ifsc) return false;
   const clean = cleanStr(ifsc).toUpperCase().replace(/\s+/g, '');
@@ -247,10 +245,10 @@ export async function validateAndCheckDuplicates(records, existingDbRecords = []
 }
 
 /**
- * Generate Master NFPS_FMT.xlsx Output File
+ * Generate Master NFPS_FMT.xlsx Output File matching exact structure of C:\Users\sachi\Downloads\NFPS_FMT (1).xlsx
  */
 export function generateNfpsExcel(nfpsRecords, debitAccountNo, creditNarration, paymentDate, refPrefix = 'NEFT') {
-  // Master Column Header Structure (Exact 13 columns in exact order)
+  // Master Column Header Structure (Exact 13 columns in exact order matching master template)
   const masterHeaders = [
     'PYMT_PROD_TYPE_CODE',
     'PYMT_MODE',
@@ -267,30 +265,49 @@ export function generateNfpsExcel(nfpsRecords, debitAccountNo, creditNarration, 
     'REF_NO'
   ];
 
-  const excelRows = [masterHeaders];
-
-  nfpsRecords.forEach((rec, idx) => {
-    const refNo = rec.refNo || `${refPrefix}${paymentDate.replace(/[^0-9]/g, '')}${String(idx + 1).padStart(4, '0')}`;
-    excelRows.push([
-      rec.pymtProdTypeCode || 'PAB_VENDOR',
-      rec.pymtMode || 'NEFT',
-      debitAccountNo || rec.debitAccNo || '50100000000000',
-      rec.farmerName || '',
-      rec.beneAccNo || '',
-      rec.beneIfsc || '',
-      Number(rec.amount || 0),
-      creditNarration || rec.creditNarr || 'MILK PAYMENT',
-      paymentDate || rec.paymentDate || '',
-      rec.mobileNum || '',
-      rec.emailId || '',
-      rec.code ? `CODE:${rec.code}` : (rec.remark || ''),
-      refNo,
-    ]);
+  const worksheet = {};
+  
+  // Set headers as string cells in Row 1
+  masterHeaders.forEach((header, colIdx) => {
+    const cellAddr = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+    worksheet[cellAddr] = { t: 's', v: header, z: '@' };
   });
 
-  const worksheet = XLSX.utils.aoa_to_sheet(excelRows);
+  // Set data rows with explicit TEXT formatting ('t': 's', 'z': '@') for account numbers, IFSC, date, and strings
+  nfpsRecords.forEach((rec, idx) => {
+    const rowIdx = idx + 1;
+    const refNo = rec.refNo || `${refPrefix}${paymentDate.replace(/[^0-9]/g, '')}${String(idx + 1).padStart(4, '0')}`;
+
+    const rowData = [
+      { t: 's', v: String(rec.pymtProdTypeCode || 'PAB_VENDOR'), z: '@' },
+      { t: 's', v: String(rec.pymtMode || 'NEFT'), z: '@' },
+      { t: 's', v: String(debitAccountNo || rec.debitAccNo || '50100000000000'), z: '@' },
+      { t: 's', v: String(rec.farmerName || ''), z: '@' },
+      { t: 's', v: String(rec.beneAccNo || ''), z: '@' },
+      { t: 's', v: String(rec.beneIfsc || ''), z: '@' },
+      { t: 'n', v: Number(rec.amount || 0), z: '0.00' },
+      { t: 's', v: String(creditNarration || rec.creditNarr || 'MILK PAYMENT'), z: '@' },
+      { t: 's', v: String(paymentDate || rec.paymentDate || ''), z: '@' },
+      { t: 's', v: String(rec.mobileNum || ''), z: '@' },
+      { t: 's', v: String(rec.emailId || ''), z: '@' },
+      { t: 's', v: String(rec.code ? `CODE:${rec.code}` : (rec.remark || '')), z: '@' },
+      { t: 's', v: String(refNo || ''), z: '@' },
+    ];
+
+    rowData.forEach((cellObj, colIdx) => {
+      const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+      worksheet[cellAddr] = cellObj;
+    });
+  });
+
+  // Set worksheet range reference
+  const totalRows = nfpsRecords.length + 1;
+  const range = { s: { r: 0, c: 0 }, e: { r: totalRows - 1, c: 12 } };
+  worksheet['!ref'] = XLSX.utils.encode_range(range);
+
+  // Match sheet name "Sheet1" exactly as in master template
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'NFPS_FMT');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
 
   const fileBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   const base64 = fileBuffer.toString('base64');
